@@ -1041,8 +1041,47 @@
 
   <script>
     // ── Config ──────────────────────────────────────────────────────────────────
-    // Thay bằng URL thực sau khi deploy backend lên Render.com
+    // API Google Apps Script
     const API_URL = "https://script.google.com/macros/s/AKfycbzLuQkgOe541D1HpS8CImWcDwG26kJ2_EqqeXwxGDA5X3z8Cdxdy77sw8rCwI3x3vXI/exec";
+
+    function buildApiUrl(action = "", params = {}) {
+      const url = new URL(API_URL);
+      if (action) url.searchParams.set("action", action);
+      Object.entries(params || {}).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== "") {
+          url.searchParams.set(key, value);
+        }
+      });
+      return url.toString();
+    }
+
+    async function apiGet(action = "", params = {}) {
+      const res = await fetch(buildApiUrl(action, params));
+      let data = null;
+      try {
+        data = await res.json();
+      } catch {
+        throw new Error("API trả về dữ liệu không hợp lệ");
+      }
+      if (!res.ok) throw new Error(data?.error || ("Lỗi " + res.status));
+      return data;
+    }
+
+    async function apiPost(payload) {
+      const res = await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      let data = null;
+      try {
+        data = await res.json();
+      } catch {
+        throw new Error("API trả về dữ liệu không hợp lệ");
+      }
+      if (!res.ok || !data?.success) throw new Error(data?.error || ("Lỗi " + res.status));
+      return data;
+    }
 
     // Demo users (trong thực tế nên dùng backend auth)
     const USERS = {
@@ -1105,9 +1144,7 @@
     async function loadDanhSach() {
       showAlert("dash-alert", "Đang tải dữ liệu từ Google Sheets...", "info");
       try {
-        const res = await fetch(API_URL + "/api/danh-sach");
-        if (!res.ok) throw new Error("Lỗi " + res.status);
-        danhSachCache = await res.json();
+        danhSachCache = await apiGet("danh-sach");
         renderDashboard(danhSachCache);
         hideAlert("dash-alert");
       } catch (e) {
@@ -1168,13 +1205,7 @@
         data.ma_phieu = currentMaPhieu;
         data.buoc = currentStep;
         data.dieu_tra_vien = currentUser?.name || "";
-        const res = await fetch(API_URL + "/api/phieu", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(data),
-        });
-        const result = await res.json();
-        if (!res.ok || !result.success) throw new Error(result.error || "Lỗi lưu");
+        await apiPost(data);
         showLoading(false);
         return true;
       } catch (e) {
@@ -1727,9 +1758,7 @@
       const drafts = listLocalDrafts();
       showAlert("dash-alert", drafts.length ? "Đang tải danh sách từ Google Sheets... Nếu mạng lỗi vẫn có thể mở các nháp trên máy." : "Đang tải dữ liệu từ Google Sheets...", "info");
       try {
-        const res = await fetch(API_URL + "/api/danh-sach");
-        if (!res.ok) throw new Error("Lỗi " + res.status);
-        danhSachCache = await res.json();
+        danhSachCache = await apiGet("danh-sach");
         renderDashboard(danhSachCache);
         hideAlert("dash-alert");
       } catch (e) {
@@ -1893,13 +1922,7 @@
         data.ma_phieu = currentMaPhieu;
         data.buoc = Math.max(Number(currentHighestStep || 0), Number(currentStep || 0), 1);
         data.dieu_tra_vien = currentUser?.name || "";
-        const res = await fetch(API_URL + "/api/phieu", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(data),
-        });
-        const result = await res.json();
-        if (!res.ok || !result.success) throw new Error(result.error || "Lỗi lưu");
+        await apiPost(data);
         currentHighestStep = Math.max(Number(currentHighestStep || 0), Number(currentStep || 0), 1);
         markLocalSynced();
         hideAlert("form-alert");
