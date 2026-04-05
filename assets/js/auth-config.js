@@ -6,11 +6,11 @@
 window.APP_AUTH = {
   // Danh sách tài khoản: { pass: "...", role: "admin"|"dtv", name: "..." }
   users: {
-    "nldanh": { pass: "123", role: "nldanh", name: "nldanh" },
-    "tqson":  { pass: "123",   role: "tqson",   name: "tqson" },
-    "vtynhi":  { pass: "123",   role: "vtynhi",   name: "vtynhi" },
-    "lkhoan":  { pass: "123",   role: "lkhoan",   name: "lkhoan" },
-    "nhhanh":  { pass: "123",   role: "nhhanh",   name: "nhhanh" },
+    "nldanh":  { pass: "123", role: "nldanh",  name: "nldanh"  },
+    "tqson":   { pass: "123", role: "tqson",   name: "tqson"   },
+    "vtynhi":  { pass: "123", role: "vtynhi",  name: "vtynhi"  },
+    "lkhoan":  { pass: "123", role: "lkhoan",  name: "lkhoan"  },
+    "nhhanh":  { pass: "123", role: "nhhanh",  name: "nhhanh"  },
   },
 
   // URL Google Apps Script — thay bằng URL deploy của bạn
