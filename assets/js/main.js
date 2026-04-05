@@ -54,6 +54,8 @@ let danhSachCache      = [];
 let dashboardFilter    = "all";
 let dashboardQuery     = "";
 let draftSaveTimer     = null;
+let dashboardPage      = 1;
+const PAGE_SIZE        = 20; // số phiếu hiển thị mỗi trang
 
 const LOCAL_DRAFT_KEY = "phieu_local_drafts_v3";
 
@@ -333,6 +335,13 @@ function markLocalSynced() {
     user:       currentUser?.name || "",
     data: { ...(existing.data || {}), ...collectAllStepsData(), ma_phieu: currentMaPhieu },
   });
+  // Tự xóa nháp đã sync hoàn toàn (buoc >= 3) để tránh đầy localStorage
+  if (currentStep >= 3) {
+    const draft = getLocalDraft(currentMaPhieu);
+    if (draft && draft.synced && Number(draft.buoc || 0) >= 3) {
+      removeLocalDraft(currentMaPhieu);
+    }
+  }
 }
 
 function bindAutosave() {
@@ -359,7 +368,9 @@ async function loadDanhSach() {
     "info"
   );
   try {
-    danhSachCache = await apiGet("danh-sach");
+    const res = await apiGet("danh-sach");
+    // Tương thích cả 2 dạng: mảng thẳng (cũ) và object có .items (mới có phân trang)
+    danhSachCache = Array.isArray(res) ? res : (res.items || []);
     renderDashboard();
     hideAlert("dash-alert");
   } catch (e) {
@@ -385,6 +396,12 @@ function renderDashboard() {
     return matchQ && matchF;
   });
 
+  // Phân trang
+  const totalPages  = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  dashboardPage     = Math.min(dashboardPage, totalPages);
+  const pageStart   = (dashboardPage - 1) * PAGE_SIZE;
+  const pageRecords = filtered.slice(pageStart, pageStart + PAGE_SIZE);
+
   document.getElementById("stat-grid").innerHTML = `
     <div class="stat-card"><div class="stat-num">${records.length}</div><div class="stat-lbl">Tổng phiếu quản lý</div></div>
     <div class="stat-card"><div class="stat-num">${records.filter(r => r.local_only).length}</div><div class="stat-lbl">Nháp trên máy</div></div>
@@ -392,7 +409,7 @@ function renderDashboard() {
     <div class="stat-card"><div class="stat-num">${records.filter(r => (r.buoc || 0) >= 3).length}</div><div class="stat-lbl">Hoàn thành</div></div>
   `;
 
-  const cards = filtered.map(record => {
+  const cards = pageRecords.map(record => {
     const status     = getRecordStatus(record);
     const actionText = (record.buoc || 0) >= 3 ? "Cập nhật" : "Tiếp tục";
     return `
@@ -417,6 +434,14 @@ function renderDashboard() {
       </div>`;
   }).join("");
 
+  // Phân trang controls
+  const paginationHtml = totalPages > 1 ? `
+    <div class="pagination">
+      <button class="btn btn-sm" onclick="changePage(${dashboardPage - 1})" ${dashboardPage <= 1 ? "disabled" : ""}>← Trước</button>
+      <span class="page-info">Trang ${dashboardPage} / ${totalPages} &nbsp;·&nbsp; ${filtered.length} phiếu</span>
+      <button class="btn btn-sm" onclick="changePage(${dashboardPage + 1})" ${dashboardPage >= totalPages ? "disabled" : ""}>Tiếp →</button>
+    </div>` : filtered.length > 0 ? `<div class="page-info-simple">${filtered.length} phiếu</div>` : "";
+
   document.getElementById("phieu-list").innerHTML = `
     <div class="dashboard-tools">
       <div class="dashboard-search"><input id="dash-search" type="search" placeholder="Tìm theo tên, mã phiếu, số hồ sơ..." value="${escapeHtml(dashboardQuery)}"></div>
@@ -428,14 +453,37 @@ function renderDashboard() {
       </div>
     </div>
     <div class="phieu-list-wrap">${cards || '<div class="empty">Không có phiếu phù hợp bộ lọc hiện tại.</div>'}</div>
+    ${paginationHtml}
   `;
 
   document.getElementById("dash-search")?.addEventListener("input", e => {
-    dashboardQuery = e.target.value || ""; renderDashboard();
+    dashboardQuery = e.target.value || "";
+    dashboardPage  = 1; // reset về trang 1 khi tìm kiếm
+    renderDashboard();
   });
   document.querySelectorAll("#dash-segmented button").forEach(btn => {
-    btn.addEventListener("click", () => { dashboardFilter = btn.dataset.filter || "all"; renderDashboard(); });
+    btn.addEventListener("click", () => {
+      dashboardFilter = btn.dataset.filter || "all";
+      dashboardPage   = 1; // reset về trang 1 khi đổi filter
+      renderDashboard();
+    });
   });
+}
+
+function changePage(page) {
+  const records      = getManagedRecords();
+  const filtered     = records.filter(record => {
+    const hay    = `${record.ma_phieu || ""} ${record.ho_ten || ""} ${record.so_ho_so || ""}`.toLowerCase();
+    const matchQ = !dashboardQuery.trim() || hay.includes(dashboardQuery.trim().toLowerCase());
+    const matchF = dashboardFilter === "all"
+      || (dashboardFilter === "draft"    && record.local_only)
+      || (dashboardFilter === "progress" && !record.local_only && (record.buoc || 0) < 3)
+      || (dashboardFilter === "done"     && (record.buoc || 0) >= 3);
+    return matchQ && matchF;
+  });
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  dashboardPage    = Math.max(1, Math.min(page, totalPages));
+  renderDashboard();
 }
 
 function openRecordByMa(ma) {
