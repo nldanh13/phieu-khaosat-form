@@ -1,21 +1,19 @@
 <!DOCTYPE html>
 <html lang="vi">
-
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Phiếu Thu Thập Số Liệu — ĐH Y Dược Cần Thơ</title>
   <link rel="stylesheet" href="./assets/css/styles.css">
-
-
+  <style>
+    /* Nhãn trường bắt buộc */
+    .req { color: var(--red, #e53e3e); font-size: 11px; margin-left: 2px; }
+  </style>
 </head>
-
 <body>
 
   <div class="loading-overlay" id="loading">
-    <div class="loading-box">
-      <div class="spinner"></div> Đang lưu dữ liệu...
-    </div>
+    <div class="loading-box"><div class="spinner"></div> Đang lưu dữ liệu...</div>
   </div>
 
   <div class="topbar">
@@ -24,13 +22,12 @@
       <div class="topbar-sub">Khoa Ngoại CTCH-TK — ĐH Y Dược Cần Thơ</div>
     </div>
     <div class="btn-group">
-      <button class="btn btn-sm" id="btn-dash" onclick="showScreen('dash')" style="display:none">← Dashboard</button>
-      <button class="btn btn-sm btn-primary" onclick="showScreen('new')" id="btn-new-top" style="display:none">+ Phiếu
-        mới</button>
+      <button class="btn btn-sm" id="btn-dash" style="display:none">← Dashboard</button>
+      <button class="btn btn-sm btn-primary" id="btn-new-top" style="display:none">+ Phiếu mới</button>
     </div>
   </div>
 
-  <!-- ─── LOGIN ─────────────────────────────────────────────────────── -->
+  <!-- LOGIN -->
   <div id="screen-login" class="screen active">
     <div class="container" style="max-width:400px;padding-top:60px;">
       <div class="card">
@@ -38,40 +35,29 @@
         <div id="login-alert" class="alert alert-error hidden"></div>
         <div class="form-group" style="margin-bottom:10px;">
           <label>Tên đăng nhập</label>
-          <input type="text" id="inp-user" placeholder="admin / dtv1 / dtv2...">
+          <input type="text" id="inp-user" placeholder="Nhập tên đăng nhập">
         </div>
         <div class="form-group" style="margin-bottom:14px;">
           <label>Mật khẩu</label>
           <input type="password" id="inp-pass" onkeydown="if(event.key==='Enter')doLogin()">
         </div>
         <button class="btn btn-primary" style="width:100%" onclick="doLogin()">Đăng nhập</button>
-        <p style="font-size:11px;color:var(--text-muted);margin-top:10px;text-align:center;">Demo: admin/admin123 ·
-          dtv1/dtv123</p>
+        <p style="font-size:11px;color:var(--text-muted);margin-top:10px;text-align:center;">
+          Liên hệ quản trị viên để được cấp tài khoản.
+        </p>
       </div>
     </div>
   </div>
 
-  <!-- ─── DASHBOARD ──────────────────────────────────────────────────── -->
+  <!-- DASHBOARD -->
   <div id="screen-dash" class="screen">
     <div class="container">
       <div id="dash-alert" class="alert hidden"></div>
       <div class="stat-grid" id="stat-grid">
-        <div class="stat-card">
-          <div class="stat-num" id="s-total">—</div>
-          <div class="stat-lbl">Tổng phiếu</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-num" id="s-b1">—</div>
-          <div class="stat-lbl">Bước 1</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-num" id="s-b2">—</div>
-          <div class="stat-lbl">Bước 2</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-num" id="s-done">—</div>
-          <div class="stat-lbl">Hoàn thành</div>
-        </div>
+        <div class="stat-card"><div class="stat-num">—</div><div class="stat-lbl">Tổng phiếu</div></div>
+        <div class="stat-card"><div class="stat-num">—</div><div class="stat-lbl">Nháp trên máy</div></div>
+        <div class="stat-card"><div class="stat-num">—</div><div class="stat-lbl">Đang điền</div></div>
+        <div class="stat-card"><div class="stat-num">—</div><div class="stat-lbl">Hoàn thành</div></div>
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
         <div style="font-size:13px;font-weight:600;">Danh sách phiếu</div>
@@ -84,7 +70,7 @@
     </div>
   </div>
 
-  <!-- ─── FORM ───────────────────────────────────────────────────────── -->
+  <!-- FORM -->
   <div id="screen-new" class="screen">
     <div class="container">
       <div id="form-alert" class="alert hidden"></div>
@@ -101,16 +87,17 @@
         <div class="btn-group">
           <button class="btn btn-sm" id="btn-prev" onclick="prevStep()" style="display:none">← Trước</button>
           <button class="btn btn-sm btn-primary" id="btn-next" onclick="nextStep()">Lưu & Tiếp theo →</button>
-          <button class="btn btn-sm btn-primary" id="btn-finish" onclick="finishForm()" style="display:none">Lưu & Hoàn
-            thành</button>
+          <button class="btn btn-sm btn-primary" id="btn-finish" onclick="finishForm()" style="display:none">Lưu & Hoàn thành</button>
         </div>
       </div>
     </div>
   </div>
-  <script src="./assets/js/core.js"></script>
-  <script src="./assets/js/enhancements.js"></script>
 
-
+  <!--
+    auth-config.js PHẢI load TRƯỚC main.js.
+    File này chứa tài khoản và API URL — KHÔNG đưa lên Git/chia sẻ công khai.
+  -->
+  <script src="./assets/js/auth-config.js"></script>
+  <script src="./assets/js/main.js"></script>
 </body>
-
 </html>
