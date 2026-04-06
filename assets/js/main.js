@@ -727,29 +727,34 @@ const HADS_DATA = [
 ];
 
 function buildStep2() {
-  const rows = HADS_DATA.map(h => `
-    <tr>
-      <td style="width:32px;text-align:center;vertical-align:middle;">
-        <span class="hads-badge badge-${h.t}">${h.t}</span><br>
-        <span style="font-size:10px;color:var(--text-muted)">${h.id}</span>
-      </td>
-      <td style="font-size:12px;line-height:1.5;">${h.q}</td>
-      <td><div class="opt-list">
-        ${h.opts.map((o,vi) => `<label><input type="radio" name="hads_${h.id}" value="${vi}" onchange="calcHADS()"> ${o}</label>`).join("")}
-      </div></td>
-    </tr>`).join("");
+  // HADS — dạng card từng câu, hiển thị tốt cả desktop lẫn mobile
+  const hadsCards = HADS_DATA.map(h => `
+    <div class="q-card">
+      <div class="q-header">
+        <span class="hads-badge badge-${h.t}">${h.t}${h.id}</span>
+        <span class="q-text">${h.q}</span>
+      </div>
+      <div class="opt-list">
+        ${h.opts.map((o,vi) => `<label class="opt-label"><input type="radio" name="hads_${h.id}" value="${vi}" onchange="calcHADS()"><span>${o}</span></label>`).join("")}
+      </div>
+    </div>`).join("");
 
-  const psqi5rows = ["5b. Thức giấc giữa đêm","5c. Phải dậy đi vệ sinh","5d. Không thở thoải mái","5e. Ho hoặc ngáy to","5f. Cảm thấy quá lạnh","5g. Cảm thấy quá nóng","5h. Có ác mộng","5i. Bị đau nhức","5j. Lý do khác"]
-    .map((q,i) => `<tr><td style="font-size:12px">${q}</td>${[0,1,2,3].map(v=>`<td><input type="radio" name="psqi_5_${i}" value="${v}" onchange="calcPSQI()"></td>`).join("")}</tr>`)
-    .join("");
+  // PSQI 5b-5j — dạng card từng dòng thay vì bảng ngang
+  const psqi5Labels = ["Không (0)", "<1/tuần (1)", "1–2/tuần (2)", "≥3/tuần (3)"];
+  const psqi5Cards  = ["5b. Thức giấc giữa đêm","5c. Phải dậy đi vệ sinh","5d. Không thở thoải mái","5e. Ho hoặc ngáy to","5f. Cảm thấy quá lạnh","5g. Cảm thấy quá nóng","5h. Có ác mộng","5i. Bị đau nhức","5j. Lý do khác"]
+    .map((q,i) => `
+      <div class="q-card">
+        <div class="q-text" style="margin-bottom:8px">${q}</div>
+        <div class="opt-row">
+          ${psqi5Labels.map((lbl,v) => `<label class="opt-chip"><input type="radio" name="psqi_5_${i}" value="${v}" onchange="calcPSQI()"><span>${lbl}</span></label>`).join("")}
+        </div>
+      </div>`).join("");
 
+  // Hài lòng (bước 3 dùng chung hàm này) — để riêng trong buildStep3
   document.getElementById("step2").innerHTML = `
   <div class="card">
     <div class="card-title">B1. Thang HADS — 14 câu <span style="font-size:11px;color:var(--red)">* Bắt buộc trả lời đủ 14 câu</span></div>
-    <div style="overflow-x:auto;"><table class="hads-table">
-      <thead><tr><th></th><th>Câu hỏi</th><th>Mức độ</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table></div>
+    <div class="q-list">${hadsCards}</div>
     <div class="score-row" id="hads-score">
       <div class="score-cell"><div class="score-val" id="h-a">—</div><div class="score-lbl">HADS-A (lo âu)</div></div>
       <div class="score-cell"><div class="score-val" id="h-d">—</div><div class="score-lbl">HADS-D (trầm cảm)</div></div>
@@ -771,8 +776,8 @@ function buildStep2() {
       <div class="form-group"><label>Chất lượng giấc ngủ tổng thể — PSQI-6</label><select id="f_psqi6" onchange="calcPSQI()"><option value="0">Rất tốt (0)</option><option value="1">Tương đối tốt (1)</option><option value="2">Tương đối kém (2)</option><option value="3">Rất kém (3)</option></select></div>
       <div class="form-group"><label>PSQI-5a: Mất &gt;30 phút để ngủ — số lần/tuần</label><select id="f_psqi5a" onchange="calcPSQI()"><option value="0">Không lần nào (0)</option><option value="1">&lt;1 lần/tuần (1)</option><option value="2">1–2 lần/tuần (2)</option><option value="3">≥3 lần/tuần (3)</option></select></div>
     </div>
-    <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin:10px 0 6px">PSQI-5b đến 5j: Trong tháng qua gặp vấn đề này bao nhiêu lần?</div>
-    <div style="overflow-x:auto;"><table class="psqi-tbl"><thead><tr><th style="text-align:left">Vấn đề</th><th>Không (0)</th><th>&lt;1/tuần (1)</th><th>1–2/tuần (2)</th><th>≥3/tuần (3)</th></tr></thead><tbody>${psqi5rows}</tbody></table></div>
+    <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin:10px 0 8px">PSQI-5b đến 5j: Trong tháng qua gặp vấn đề này bao nhiêu lần?</div>
+    <div class="q-list">${psqi5Cards}</div>
     <div class="form-row" style="margin-top:10px">
       <div class="form-group"><label>Dùng thuốc ngủ/tuần — PSQI-7</label><select id="f_psqi7" onchange="calcPSQI()"><option value="0">Không (0)</option><option value="1">&lt;1/tuần (1)</option><option value="2">1–2/tuần (2)</option><option value="3">≥3/tuần (3)</option></select></div>
       <div class="form-group"><label>Khó giữ tỉnh táo ban ngày — PSQI-8</label><select id="f_psqi8" onchange="calcPSQI()"><option value="0">Không (0)</option><option value="1">&lt;1/tuần (1)</option><option value="2">1–2/tuần (2)</option><option value="3">≥3/tuần (3)</option></select></div>
@@ -788,9 +793,15 @@ function buildStep2() {
 }
 
 function buildStep3() {
-  const hlRows = ["Kiểm soát đau sau PT","Chăm sóc điều dưỡng","Thông tin trước/sau mổ","Khả năng vận động sau mổ","Kết quả phẫu thuật tổng thể"]
-    .map((q,i) => `<tr><td style="font-size:12px">${q}</td>${[1,2,3,4,5].map(v=>`<td><input type="radio" name="hl_${i}" value="${v}"></td>`).join("")}</tr>`)
-    .join("");
+  const hlLabels = ["1","2","3","4","5"];
+  const hlCards  = ["Kiểm soát đau sau PT","Chăm sóc điều dưỡng","Thông tin trước/sau mổ","Khả năng vận động sau mổ","Kết quả phẫu thuật tổng thể"]
+    .map((q,i) => `
+      <div class="q-card">
+        <div class="q-text" style="margin-bottom:8px">${q}</div>
+        <div class="opt-row">
+          ${hlLabels.map((lbl,vi) => `<label class="opt-chip"><input type="radio" name="hl_${i}" value="${vi+1}"><span>${lbl}</span></label>`).join("")}
+        </div>
+      </div>`).join("");
   document.getElementById("step3").innerHTML = `
   <div class="card">
     <div class="card-title">C1. Thông tin phẫu thuật thực tế</div>
@@ -826,7 +837,7 @@ function buildStep3() {
   </div>
   <div class="card">
     <div class="card-title">C7. Mức độ hài lòng (Likert 1–5)</div>
-    <div style="overflow-x:auto;"><table class="psqi-tbl"><thead><tr><th style="text-align:left">Tiêu chí</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th></tr></thead><tbody>${hlRows}</tbody></table></div>
+    <div class="q-list">${hlCards}</div>
     <div class="form-row full" style="margin-top:10px"><div class="form-group"><label>Nhận xét / góp ý của bệnh nhân</label><textarea id="f_nhanXet" placeholder="Ghi tự do..."></textarea></div></div>
   </div>`;
 }

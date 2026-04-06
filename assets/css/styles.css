@@ -262,3 +262,125 @@ body{font-family:'Be Vietnam Pro',system-ui,sans-serif;font-size:14px;line-heigh
   .phieu-actions .btn{flex:1}
   .form-footer .btn-group{width:100%;display:grid;grid-template-columns:1fr 1fr}
 }
+
+/* Pagination */
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 16px 0 4px;
+}
+.pagination .btn[disabled] {
+  opacity: .4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+.page-info {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.page-info-simple {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: right;
+  padding: 8px 2px 0;
+}
+
+/* Question cards — mobile-friendly HADS / PSQI / Likert */
+.q-list { display: flex; flex-direction: column; gap: 10px; }
+
+.q-card {
+  background: var(--slate-50);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+}
+
+.q-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.q-text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  flex: 1;
+}
+
+.opt-list { display: flex; flex-direction: column; gap: 6px; }
+
+.opt-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--slate-700);
+  transition: background .12s, border-color .12s;
+}
+
+.opt-label:hover { background: var(--blue-50); border-color: var(--blue-200); }
+
+.opt-label input[type=radio] {
+  accent-color: var(--primary);
+  width: 16px; height: 16px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.opt-label input[type=radio]:checked + span { color: var(--primary); font-weight: 600; }
+
+.opt-label:has(input:checked) {
+  background: var(--blue-50);
+  border-color: var(--blue-400);
+}
+
+/* Chip-style options — for PSQI 5b-5j and Likert */
+.opt-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.opt-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--slate-600);
+  transition: all .12s;
+  white-space: nowrap;
+}
+
+.opt-chip:hover { background: var(--blue-50); border-color: var(--blue-300); }
+
+.opt-chip input[type=radio] {
+  accent-color: var(--primary);
+  width: 14px; height: 14px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.opt-chip:has(input:checked) {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+
+.opt-chip:has(input:checked) input { accent-color: #fff; }
