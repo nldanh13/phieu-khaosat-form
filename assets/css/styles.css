@@ -38,7 +38,7 @@
   --red:var(--red-600);--red-light:var(--red-50);
   --gray:var(--slate-500);--gray-light:var(--slate-100);--gray-mid:var(--slate-300);
 }
-}
+
 
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html{scroll-behavior:smooth}
