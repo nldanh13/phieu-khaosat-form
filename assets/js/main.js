@@ -268,30 +268,23 @@ async function nextStep()  {
     showAlert("form-alert", "Vui lòng điền đầy đủ: " + errors.join(" · "), "error");
     return;
   }
-  // [FIX#3] Lưu local trước, cố gắng sync server, nhưng dù server lỗi vẫn đi tiếp
+  // [FIX-SPEED] Lưu local + chuyển bước NGAY — không chờ server
   saveLocalProgress(false);
-  showLoading(true);
-  try {
-    const data = collectStep(currentStep);
-    data.ma_phieu = currentMaPhieu;
-    data.buoc     = Math.max(Number(currentHighestStep || 0), Number(currentStep || 0), 1);
-    data.dieu_tra_vien = currentUser?.name || "";
-    await apiPost(data);
-    currentHighestStep = Math.max(Number(currentHighestStep || 0), Number(currentStep || 0), 1);
-    markLocalSynced();
-    hideAlert("form-alert");
-    updateFooterStatus(`Đã lưu hệ thống lúc ${formatWhen(new Date().toISOString())}`);
-  } catch (e) {
-    // Lỗi server → vẫn tiếp tục, nháp local đã lưu rồi
-    showAlert("form-alert",
-      `Không lưu được lên server (${e.message}). Đã giữ nháp trên máy — sẽ đồng bộ sau.`,
-      "error"
-    );
-  } finally {
-    showLoading(false);
-  }
-  // Dù server lỗi hay không, vẫn chuyển bước
+  currentHighestStep = Math.max(Number(currentHighestStep || 0), Number(currentStep || 0), 1);
+  const stepToSave = currentStep; // capture trước khi showStep thay đổi currentStep
   showStep(Math.min(3, currentStep + 1));
+
+  // Gửi lên server ngầm (không block UI)
+  const data = collectStep(stepToSave);
+  data.ma_phieu       = currentMaPhieu;
+  data.buoc           = currentHighestStep;
+  data.dieu_tra_vien  = currentUser?.name || "";
+  apiPost(data).then(() => {
+    markLocalSynced();
+    updateFooterStatus(`Đã lưu hệ thống lúc ${formatWhen(new Date().toISOString())}`);
+  }).catch(e => {
+    updateFooterStatus(`⚠ Chưa lưu lên server (${e.message}) — nháp đã giữ trên máy`);
+  });
 }
 
 function prevStep() { showStep(Math.max(1, currentStep - 1)); }
@@ -311,11 +304,33 @@ async function finishForm() {
     data.buoc     = 3;
     data.dieu_tra_vien = currentUser?.name || "";
     await apiPost(data);
-    markLocalSynced();
-    const local = getLocalDraft(currentMaPhieu);
-    if (local) upsertLocalDraft({ ...local, buoc: 3, synced: true, local_only: false, updated_at: new Date().toISOString() });
+    // [FIX] Cập nhật draft local: synced=true nhưng GIỮ LẠI toàn bộ data
+    // Không xóa draft ngay — chờ server cache refresh xong mới xóa
+    const existingDraft = getLocalDraft(currentMaPhieu) || {};
+    upsertLocalDraft({
+      ...existingDraft,
+      ma_phieu:   currentMaPhieu,
+      buoc:       3,
+      last_step:  3,
+      updated_at: new Date().toISOString(),
+      local_only: false,
+      synced:     true,
+      user:       currentUser?.name || "",
+      data: { ...(existingDraft.data || {}), ...collectAllStepsData(), ma_phieu: currentMaPhieu },
+    });
     showAlert("form-alert", `Phiếu ${currentMaPhieu} đã lưu hoàn thành.`, "success");
-    setTimeout(() => { showScreen("dash"); loadDanhSach(); }, 900);
+    const savedMa = currentMaPhieu;
+    // [FIX] Chuyển về dashboard TRƯỚC, sau đó load server → khi cache có dữ liệu mới thì xóa draft
+    setTimeout(async () => {
+      showScreen("dash");
+      await loadDanhSach();
+      // Sau khi server cache đã có bản ghi này, mới xóa draft local
+      const draft = getLocalDraft(savedMa);
+      if (draft && draft.synced && Number(draft.buoc || 0) >= 3 && hasRemoteRecord(savedMa)) {
+        removeLocalDraft(savedMa);
+        renderDashboard();
+      }
+    }, 900);
   } catch (e) {
     showAlert("form-alert",
       `Không lưu được lên server (${e.message}). Phiếu đã lưu nháp trên máy — vui lòng thử lại khi có mạng.`,
@@ -417,12 +432,8 @@ function markLocalSynced() {
     user:       currentUser?.name || "",
     data: { ...(existing.data || {}), ...collectAllStepsData(), ma_phieu: currentMaPhieu },
   });
-  if (currentStep >= 3) {
-    const draft = getLocalDraft(currentMaPhieu);
-    if (draft && draft.synced && Number(draft.buoc || 0) >= 3) {
-      removeLocalDraft(currentMaPhieu);
-    }
-  }
+  // [FIX] Bỏ việc tự xóa draft ở đây — để finishForm/caller quyết định xóa sau khi server cache đã refresh
+  // Tránh mất thông tin khi dashboard render trước khi loadDanhSach() xong
 }
 
 function bindAutosave() {
@@ -637,11 +648,27 @@ const FIELD_ID_MAP = {
   tg_nam_vien: "f_tgNamVien", nhan_xet: "f_nhanXet",
 };
 
+// [FIX-DATE] Google Sheets trả về ngày dạng ISO "2000-01-15T00:00:00+07:00"
+// nhưng <input type="date"> chỉ nhận "YYYY-MM-DD" → cần cắt phần thừa
+const DATE_FIELDS = new Set(["ngay_sinh","ngay_nhap_vien","ngay_pt_du_kien","ngay_pt_thuc"]);
+function normalizeDateForInput(field, value) {
+  if (!DATE_FIELDS.has(field)) return value;
+  if (!value) return value;
+  const s = String(value);
+  // Nếu có "T" (ISO datetime) → lấy phần YYYY-MM-DD trước chữ T
+  const tIdx = s.indexOf("T");
+  if (tIdx > 0) return s.slice(0, tIdx);
+  // Nếu dạng dd/MM/yyyy → convert sang YYYY-MM-DD
+  const dmyMatch = s.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+  if (dmyMatch) return `${dmyMatch[3]}-${dmyMatch[2]}-${dmyMatch[1]}`;
+  return value;
+}
+
 function applyFormData(data = {}) {
   Object.entries(FIELD_ID_MAP).forEach(([field, id]) => {
     const el = document.getElementById(id);
     if (!el || data[field] === undefined || data[field] === null || data[field] === "") return;
-    el.value = data[field];
+    el.value = normalizeDateForInput(field, data[field]);
   });
   for (let i = 1; i <= 14; i++) {
     const v = data[`hads_${i}`];
