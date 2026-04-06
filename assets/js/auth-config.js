@@ -21,5 +21,5 @@ window.APP_AUTH = {
   },
 
   // URL Google Apps Script — thay bằng URL deploy của bạn
-  apiUrl: "https://script.google.com/macros/s/AKfycbwe3BgGGflQLxgDdNhu4COCF4CoScSyJ9pqgUec_2Z2OHFb-fHnlCR9aQsRnM51FORi/exec",
+  apiUrl: "https://script.google.com/macros/s/AKfycbwgqi-N-LzK0uUu6r7HngAMVRSblJ-qAoFp6PDHyLVN4-bwRuZLRfhZkuOAs5bfIpKN/exec",
 };
