@@ -1,10 +1,17 @@
 // ============================================================
-// CẤU HÌNH XÁC THỰC — CHỈNH SỬA FILE NÀY ĐỂ THÊM/SỬA TÀI KHOẢN
-// KHÔNG đưa file này lên Git / chia sẻ công khai
+// auth-config.js — CẤU HÌNH XÁC THỰC
+//
+// ⚠️  BẢO MẬT QUAN TRỌNG:
+//   - KHÔNG đưa file này lên Git / chia sẻ công khai
+//   - Thêm auth-config.js vào .gitignore ngay bây giờ
+//   - Xác thực thực sự nên chuyển sang backend
+//     (xem README_SECURITY.md để biết hướng dẫn)
+//
+// File này CHỈ là giải pháp tạm thời cho môi trường nội bộ
+// không có backend. Bất kỳ ai mở DevTools đều đọc được.
 // ============================================================
 
 window.APP_AUTH = {
-  // Danh sách tài khoản: { pass: "...", role: "admin"|"dtv", name: "..." }
   users: {
     "nldanh":  { pass: "123", role: "nldanh",  name: "nldanh"  },
     "tqson":   { pass: "123", role: "tqson",   name: "tqson"   },

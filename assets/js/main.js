@@ -1,11 +1,14 @@
 // ============================================================
 // main.js — Phiếu Thu Thập Số Liệu ĐH Y Dược Cần Thơ
-// Gộp từ core.js + enhancements.js. Sửa:
-//   - Tài khoản/URL chuyển ra auth-config.js
-//   - Gộp hàm trùng (showScreen, showStep, nextStep, ...)
-//   - Validation bắt buộc trước khi chuyển bước
-//   - genMaPhieu dùng crypto.randomUUID() tránh trùng
-//   - Offline draft + autosave giữ nguyên
+//
+// THAY ĐỔI SO VỚI PHIÊN BẢN CŨ:
+//   [FIX#3]  saveCurrentStep() thất bại → vẫn lưu local + đi tiếp
+//   [FIX#4]  Loại bỏ giá trị mặc định số (0) khỏi collectStep
+//            → dùng "" thay vì 0 khi chưa nhập
+//   [FIX#5]  Select "vận động" sửa option đầu có value rõ ràng
+//   [FIX#6]  Phân biệt rõ "chưa nhập" (null/"") vs "nhập = 0"
+//   [FIX#7]  jumpToStep kiểm tra validation trước khi nhảy tiến
+//   [FIX#8]  getRecordStatus thống nhất logic trạng thái
 // ============================================================
 
 // ── Config (đọc từ auth-config.js) ──────────────────────────
@@ -55,7 +58,7 @@ let dashboardFilter    = "all";
 let dashboardQuery     = "";
 let draftSaveTimer     = null;
 let dashboardPage      = 1;
-const PAGE_SIZE        = 20; // số phiếu hiển thị mỗi trang
+const PAGE_SIZE        = 20;
 
 const LOCAL_DRAFT_KEY = "phieu_local_drafts_v3";
 
@@ -77,7 +80,6 @@ function doLogin() {
 
 // ── Helpers ──────────────────────────────────────────────────
 function genMaPhieu() {
-  // crypto.randomUUID() tránh trùng khi nhiều người dùng cùng lúc
   const uuid = (typeof crypto !== "undefined" && crypto.randomUUID)
     ? crypto.randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase()
     : Date.now().toString(36).toUpperCase().slice(-8);
@@ -168,10 +170,16 @@ function getManagedRecords() {
   );
 }
 
+// [FIX#8] Thống nhất logic trạng thái:
+// - Phiếu chỉ coi là "Hoàn thành" khi buoc >= 3 VÀ đã sync lên server
+// - "Chưa đồng bộ" = có remote nhưng local chưa sync
+// - "Nháp trên máy" = chưa bao giờ lên server
+// - "Đang điền" = có trên server nhưng buoc < 3
 function getRecordStatus(record) {
-  if (record.local_only)                    return { text: "Nháp trên máy",  cls: "badge-purple" };
-  if (record.has_local && !record.synced)   return { text: "Chưa đồng bộ",   cls: "badge-purple" };
-  if ((record.buoc || 0) >= 3)              return { text: "Hoàn thành",     cls: "badge-green"  };
+  if (record.local_only)                           return { text: "Nháp trên máy",  cls: "badge-purple" };
+  if (record.has_local && !record.synced)          return { text: "Chưa đồng bộ",   cls: "badge-purple" };
+  if ((record.buoc || 0) >= 3 && record.synced)   return { text: "Hoàn thành",     cls: "badge-green"  };
+  if ((record.buoc || 0) >= 3 && !record.has_local) return { text: "Hoàn thành",   cls: "badge-green"  };
   return { text: "Đang điền", cls: "badge-amber" };
 }
 
@@ -229,18 +237,83 @@ function showStep(n) {
   );
 }
 
-function jumpToStep(step) { showStep(Math.max(1, Math.min(3, Number(step || 1)))); }
-async function nextStep()  { if (await saveCurrentStep()) showStep(Math.min(3, currentStep + 1)); }
-function prevStep()        { showStep(Math.max(1, currentStep - 1)); }
+// [FIX#7] jumpToStep: không cho nhảy tiến quá bước đã validate
+// Chỉ cho phép nhảy về bước đã qua hoặc bước tiếp theo liền kề
+function jumpToStep(step) {
+  const target = Math.max(1, Math.min(3, Number(step || 1)));
+  if (target > currentStep) {
+    // Muốn tiến: phải validate bước hiện tại trước
+    const errors = validateStep(currentStep);
+    if (errors.length > 0) {
+      showAlert("form-alert", "Vui lòng hoàn tất bước hiện tại trước: " + errors.join(" · "), "error");
+      return;
+    }
+    saveLocalProgress(false);
+  }
+  showStep(target);
+}
+
+async function nextStep()  {
+  const errors = validateStep(currentStep);
+  if (errors.length > 0) {
+    showAlert("form-alert", "Vui lòng điền đầy đủ: " + errors.join(" · "), "error");
+    return;
+  }
+  // [FIX#3] Lưu local trước, cố gắng sync server, nhưng dù server lỗi vẫn đi tiếp
+  saveLocalProgress(false);
+  showLoading(true);
+  try {
+    const data = collectStep(currentStep);
+    data.ma_phieu = currentMaPhieu;
+    data.buoc     = Math.max(Number(currentHighestStep || 0), Number(currentStep || 0), 1);
+    data.dieu_tra_vien = currentUser?.name || "";
+    await apiPost(data);
+    currentHighestStep = Math.max(Number(currentHighestStep || 0), Number(currentStep || 0), 1);
+    markLocalSynced();
+    hideAlert("form-alert");
+    updateFooterStatus(`Đã lưu hệ thống lúc ${formatWhen(new Date().toISOString())}`);
+  } catch (e) {
+    // Lỗi server → vẫn tiếp tục, nháp local đã lưu rồi
+    showAlert("form-alert",
+      `Không lưu được lên server (${e.message}). Đã giữ nháp trên máy — sẽ đồng bộ sau.`,
+      "error"
+    );
+  } finally {
+    showLoading(false);
+  }
+  // Dù server lỗi hay không, vẫn chuyển bước
+  showStep(Math.min(3, currentStep + 1));
+}
+
+function prevStep() { showStep(Math.max(1, currentStep - 1)); }
 
 async function finishForm() {
+  const errors = validateStep(currentStep);
+  if (errors.length > 0) {
+    showAlert("form-alert", "Vui lòng điền đầy đủ: " + errors.join(" · "), "error");
+    return;
+  }
   currentHighestStep = Math.max(currentHighestStep, 3);
-  if (await saveCurrentStep()) {
+  saveLocalProgress(false);
+  showLoading(true);
+  try {
+    const data = collectAllStepsData();
+    data.ma_phieu = currentMaPhieu;
+    data.buoc     = 3;
+    data.dieu_tra_vien = currentUser?.name || "";
+    await apiPost(data);
     markLocalSynced();
     const local = getLocalDraft(currentMaPhieu);
     if (local) upsertLocalDraft({ ...local, buoc: 3, synced: true, local_only: false, updated_at: new Date().toISOString() });
-    showAlert("form-alert", `Phiếu ${currentMaPhieu} đã lưu hoàn thành. Có thể mở lại từ danh sách để cập nhật sau.`, "success");
+    showAlert("form-alert", `Phiếu ${currentMaPhieu} đã lưu hoàn thành.`, "success");
     setTimeout(() => { showScreen("dash"); loadDanhSach(); }, 900);
+  } catch (e) {
+    showAlert("form-alert",
+      `Không lưu được lên server (${e.message}). Phiếu đã lưu nháp trên máy — vui lòng thử lại khi có mạng.`,
+      "error"
+    );
+  } finally {
+    showLoading(false);
   }
 }
 
@@ -276,7 +349,7 @@ function validateStep(n) {
   return errors;
 }
 
-// ── Save step ────────────────────────────────────────────────
+// ── Save current step (chỉ dùng cho finishForm — nextStep đã tách) ───────────
 async function saveCurrentStep() {
   const errors = validateStep(currentStep);
   if (errors.length > 0) {
@@ -335,7 +408,6 @@ function markLocalSynced() {
     user:       currentUser?.name || "",
     data: { ...(existing.data || {}), ...collectAllStepsData(), ma_phieu: currentMaPhieu },
   });
-  // Tự xóa nháp đã sync hoàn toàn (buoc >= 3) để tránh đầy localStorage
   if (currentStep >= 3) {
     const draft = getLocalDraft(currentMaPhieu);
     if (draft && draft.synced && Number(draft.buoc || 0) >= 3) {
@@ -369,7 +441,6 @@ async function loadDanhSach() {
   );
   try {
     const res = await apiGet("danh-sach");
-    // Tương thích cả 2 dạng: mảng thẳng (cũ) và object có .items (mới có phân trang)
     danhSachCache = Array.isArray(res) ? res : (res.items || []);
     renderDashboard();
     hideAlert("dash-alert");
@@ -396,7 +467,6 @@ function renderDashboard() {
     return matchQ && matchF;
   });
 
-  // Phân trang
   const totalPages  = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   dashboardPage     = Math.min(dashboardPage, totalPages);
   const pageStart   = (dashboardPage - 1) * PAGE_SIZE;
@@ -434,7 +504,6 @@ function renderDashboard() {
       </div>`;
   }).join("");
 
-  // Phân trang controls
   const paginationHtml = totalPages > 1 ? `
     <div class="pagination">
       <button class="btn btn-sm" onclick="changePage(${dashboardPage - 1})" ${dashboardPage <= 1 ? "disabled" : ""}>← Trước</button>
@@ -458,21 +527,21 @@ function renderDashboard() {
 
   document.getElementById("dash-search")?.addEventListener("input", e => {
     dashboardQuery = e.target.value || "";
-    dashboardPage  = 1; // reset về trang 1 khi tìm kiếm
+    dashboardPage  = 1;
     renderDashboard();
   });
   document.querySelectorAll("#dash-segmented button").forEach(btn => {
     btn.addEventListener("click", () => {
       dashboardFilter = btn.dataset.filter || "all";
-      dashboardPage   = 1; // reset về trang 1 khi đổi filter
+      dashboardPage   = 1;
       renderDashboard();
     });
   });
 }
 
 function changePage(page) {
-  const records      = getManagedRecords();
-  const filtered     = records.filter(record => {
+  const records  = getManagedRecords();
+  const filtered = records.filter(record => {
     const hay    = `${record.ma_phieu || ""} ${record.ho_ten || ""} ${record.so_ho_so || ""}`.toLowerCase();
     const matchQ = !dashboardQuery.trim() || hay.includes(dashboardQuery.trim().toLowerCase());
     const matchF = dashboardFilter === "all"
@@ -603,46 +672,85 @@ function collectAllStepsData() {
   return { ...collectStep(1), ...collectStep(2), ...collectStep(3) };
 }
 
+// [FIX#4][FIX#6] collectStep: không tự điền giá trị mặc định
+// - getText/getNum trả về "" khi trường trống → phân biệt "chưa nhập" vs "nhập 0"
+// - radio trả về null khi chưa chọn (không phải "")
+// - Select bắt buộc chọn rõ ràng (không default option đầu)
 function collectStep(n) {
-  const get      = id => { const el = document.getElementById(id); return el ? el.value : ""; };
-  const getInt   = id => { const el = document.getElementById(id); return el ? parseInt(el.value) || 0 : 0; };
-  const getFloat = id => { const el = document.getElementById(id); return el ? parseFloat(el.value) || 0 : 0; };
-  const radio    = name => { const el = document.querySelector(`input[name="${name}"]:checked`); return el ? parseInt(el.value) : ""; };
+  // Trả về chuỗi, hoặc "" nếu trống
+  const getText = id => {
+    const el = document.getElementById(id);
+    return el ? el.value : "";
+  };
+  // Trả về số nếu nhập, null nếu trống — phân biệt 0 với chưa nhập
+  const getNum = id => {
+    const el = document.getElementById(id);
+    if (!el || el.value === "" || el.value === null) return null;
+    const v = parseFloat(el.value);
+    return isNaN(v) ? null : v;
+  };
+  // Radio: trả về số nếu chọn, null nếu chưa chọn
+  const radio = name => {
+    const el = document.querySelector(`input[name="${name}"]:checked`);
+    return el ? parseInt(el.value) : null;
+  };
 
   if (n === 1) return {
-    ho_ten: get("f_ten"), so_ho_so: get("f_hoSo"),
-    ngay_sinh: get("f_ngaySinh"), gioi_tinh: get("f_gioi"),
-    nghe_nghiep: get("f_ngheNghiep"), dia_chi: get("f_diaChi"),
-    hoc_van: get("f_hocVan"), dan_toc: get("f_danToc"),
-    ngay_nhap_vien: get("f_ngayNhapVien"), ngay_pt_du_kien: get("f_ngayPT"),
-    can_nang: get("f_canNang"), chieu_cao: get("f_chieuCao"),
-    chan_doan: get("f_chanDoan"), loai_pt: get("f_loaiPT"),
-    vung_pt: get("f_vungPT"), pp_pt: get("f_ppPT"), vo_cam: get("f_voCam"),
-    vas_nhap_vien: getInt("f_vasNhap"),
+    ho_ten:         getText("f_ten"),
+    so_ho_so:       getText("f_hoSo"),
+    ngay_sinh:      getText("f_ngaySinh"),
+    gioi_tinh:      getText("f_gioi"),
+    nghe_nghiep:    getText("f_ngheNghiep"),
+    dia_chi:        getText("f_diaChi"),
+    hoc_van:        getText("f_hocVan"),
+    dan_toc:        getText("f_danToc"),
+    ngay_nhap_vien: getText("f_ngayNhapVien"),
+    ngay_pt_du_kien: getText("f_ngayPT"),
+    can_nang:       getNum("f_canNang"),
+    chieu_cao:      getNum("f_chieuCao"),
+    chan_doan:      getText("f_chanDoan"),
+    loai_pt:        getText("f_loaiPT"),
+    vung_pt:        getText("f_vungPT"),
+    pp_pt:          getText("f_ppPT"),
+    vo_cam:         getText("f_voCam"),
+    // VAS: range luôn có giá trị số (mặc định 0 của input range là hợp lệ)
+    vas_nhap_vien:  getNum("f_vasNhap"),
   };
 
   if (n === 2) {
     const d = {};
     for (let i = 1; i <= 14; i++) d[`hads_${i}`] = radio(`hads_${i}`);
-    d.psqi1 = get("f_psqi1"); d.psqi3 = get("f_psqi3");
-    d.psqi2 = getFloat("f_psqi2"); d.psqi4 = getFloat("f_psqi4");
-    d.psqi5a = radio("psqi5a_r") !== "" ? radio("psqi5a_r") : getInt("f_psqi5a");
-    d.psqi6 = getInt("f_psqi6"); d.psqi7 = getInt("f_psqi7");
-    d.psqi8 = getInt("f_psqi8"); d.psqi9 = getInt("f_psqi9");
+    d.psqi1  = getText("f_psqi1");
+    d.psqi3  = getText("f_psqi3");
+    d.psqi2  = getNum("f_psqi2");
+    d.psqi4  = getNum("f_psqi4");
+    d.psqi5a = getText("f_psqi5a") !== "" ? getNum("f_psqi5a") : null;
+    d.psqi6  = getNum("f_psqi6");
+    d.psqi7  = getNum("f_psqi7");
+    d.psqi8  = getNum("f_psqi8");
+    d.psqi9  = getNum("f_psqi9");
     for (let i = 0; i < 9; i++) d[`psqi_5_${i}`] = radio(`psqi_5_${i}`);
     return d;
   }
 
   if (n === 3) return {
-    ngay_pt_thuc: get("f_ngayPTthuc"), tg_pt: get("f_tgPT"),
-    pp_pt_thuc: get("f_ppPTthuc"), vo_cam_thuc: get("f_voCamThuc"),
-    mat_mau: get("f_matMau"), truyen_mau: get("f_truyenMau"),
-    vas1: getInt("f_vas1"), vas2: getInt("f_vas2"), vas3: getInt("f_vas3"),
-    van_dong: get("f_vanDong"), kha_nang_vd: get("f_khanangVD"),
-    bien_chung: get("f_bienChung"), tg_nam_vien: get("f_tgNamVien"),
+    ngay_pt_thuc:  getText("f_ngayPTthuc"),
+    tg_pt:         getNum("f_tgPT"),
+    pp_pt_thuc:    getText("f_ppPTthuc"),
+    vo_cam_thuc:   getText("f_voCamThuc"),
+    mat_mau:       getNum("f_matMau"),
+    truyen_mau:    getText("f_truyenMau"),
+    // VAS sau mổ: range, giá trị 0 là hợp lệ
+    vas1:          getNum("f_vas1"),
+    vas2:          getNum("f_vas2"),
+    vas3:          getNum("f_vas3"),
+    van_dong:      getText("f_vanDong"),
+    kha_nang_vd:   getText("f_khanangVD"),
+    bien_chung:    getText("f_bienChung"),
+    tg_nam_vien:   getNum("f_tgNamVien"),
     hl_0: radio("hl_0"), hl_1: radio("hl_1"), hl_2: radio("hl_2"),
     hl_3: radio("hl_3"), hl_4: radio("hl_4"),
-    nhan_xet: get("f_nhanXet"),
+    nhan_xet:      getText("f_nhanXet"),
   };
 }
 
@@ -710,12 +818,9 @@ function calcBMI() {
   } else { el.textContent = ""; }
 }
 
-// Đọc câu hỏi từ questions-config.js
-// Nếu chưa load thì fallback về mảng rỗng (tránh lỗi crash)
 const HADS_DATA = window.HADS_DATA || [];
 
 function buildStep2() {
-  // HADS — dạng card từng câu, hiển thị tốt cả desktop lẫn mobile
   const hadsCards = HADS_DATA.map(h => `
     <div class="q-card">
       <div class="q-header">
@@ -731,7 +836,6 @@ function buildStep2() {
       </div>
     </div>`).join("");
 
-  // PSQI 5b-5j — dạng card từng dòng thay vì bảng ngang
   const psqi5Labels = ["Không (0)", "<1/tuần (1)", "1–2/tuần (2)", "≥3/tuần (3)"];
   const psqi5Items  = window.PSQI5_ITEMS || [];
   const psqi5Cards  = psqi5Items
@@ -743,7 +847,6 @@ function buildStep2() {
         </div>
       </div>`).join("");
 
-  // Hài lòng (bước 3 dùng chung hàm này) — để riêng trong buildStep3
   document.getElementById("step2").innerHTML = `
   <div class="card">
     <div class="card-title">B1. Thang HADS — 14 câu <span style="font-size:11px;color:var(--red)">* Bắt buộc trả lời đủ 14 câu</span></div>
@@ -758,25 +861,70 @@ function buildStep2() {
   <div class="card">
     <div class="card-title">B2. Chỉ số PSQI — Chất lượng giấc ngủ</div>
     <div class="form-row">
-      <div class="form-group"><label>Giờ đi ngủ (PSQI-1) <span class="req">*</span></label><input type="time" id="f_psqi1" value="22:00" onchange="calcPSQI()"></div>
-      <div class="form-group"><label>Giờ thức dậy (PSQI-3) <span class="req">*</span></label><input type="time" id="f_psqi3" value="06:00" onchange="calcPSQI()"></div>
+      <div class="form-group"><label>Giờ đi ngủ (PSQI-1) <span class="req">*</span></label><input type="time" id="f_psqi1" onchange="calcPSQI()"></div>
+      <div class="form-group"><label>Giờ thức dậy (PSQI-3) <span class="req">*</span></label><input type="time" id="f_psqi3" onchange="calcPSQI()"></div>
     </div>
     <div class="form-row">
       <div class="form-group"><label>Mất bao lâu để ngủ được (phút) — PSQI-2</label><input type="number" id="f_psqi2" placeholder="30" min="0" max="120" onchange="calcPSQI()"></div>
       <div class="form-group"><label>Ngủ thực sự bao nhiêu giờ/đêm — PSQI-4</label><input type="number" id="f_psqi4" placeholder="6.5" step="0.5" min="0" max="12" onchange="calcPSQI()"></div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label>Chất lượng giấc ngủ tổng thể — PSQI-6</label><select id="f_psqi6" onchange="calcPSQI()"><option value="0">Rất tốt (0)</option><option value="1">Tương đối tốt (1)</option><option value="2">Tương đối kém (2)</option><option value="3">Rất kém (3)</option></select></div>
-      <div class="form-group"><label>PSQI-5a: Mất &gt;30 phút để ngủ — số lần/tuần</label><select id="f_psqi5a" onchange="calcPSQI()"><option value="0">Không lần nào (0)</option><option value="1">&lt;1 lần/tuần (1)</option><option value="2">1–2 lần/tuần (2)</option><option value="3">≥3 lần/tuần (3)</option></select></div>
+      <div class="form-group">
+        <label>Chất lượng giấc ngủ tổng thể — PSQI-6</label>
+        <select id="f_psqi6" onchange="calcPSQI()">
+          <option value="">Chọn...</option>
+          <option value="0">Rất tốt (0)</option>
+          <option value="1">Tương đối tốt (1)</option>
+          <option value="2">Tương đối kém (2)</option>
+          <option value="3">Rất kém (3)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>PSQI-5a: Mất &gt;30 phút để ngủ — số lần/tuần</label>
+        <select id="f_psqi5a" onchange="calcPSQI()">
+          <option value="">Chọn...</option>
+          <option value="0">Không lần nào (0)</option>
+          <option value="1">&lt;1 lần/tuần (1)</option>
+          <option value="2">1–2 lần/tuần (2)</option>
+          <option value="3">≥3 lần/tuần (3)</option>
+        </select>
+      </div>
     </div>
     <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin:10px 0 8px">PSQI-5b đến 5j: Trong tháng qua gặp vấn đề này bao nhiêu lần?</div>
     <div class="q-list">${psqi5Cards}</div>
     <div class="form-row" style="margin-top:10px">
-      <div class="form-group"><label>Dùng thuốc ngủ/tuần — PSQI-7</label><select id="f_psqi7" onchange="calcPSQI()"><option value="0">Không (0)</option><option value="1">&lt;1/tuần (1)</option><option value="2">1–2/tuần (2)</option><option value="3">≥3/tuần (3)</option></select></div>
-      <div class="form-group"><label>Khó giữ tỉnh táo ban ngày — PSQI-8</label><select id="f_psqi8" onchange="calcPSQI()"><option value="0">Không (0)</option><option value="1">&lt;1/tuần (1)</option><option value="2">1–2/tuần (2)</option><option value="3">≥3/tuần (3)</option></select></div>
+      <div class="form-group">
+        <label>Dùng thuốc ngủ/tuần — PSQI-7</label>
+        <select id="f_psqi7" onchange="calcPSQI()">
+          <option value="">Chọn...</option>
+          <option value="0">Không (0)</option>
+          <option value="1">&lt;1/tuần (1)</option>
+          <option value="2">1–2/tuần (2)</option>
+          <option value="3">≥3/tuần (3)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Khó giữ tỉnh táo ban ngày — PSQI-8</label>
+        <select id="f_psqi8" onchange="calcPSQI()">
+          <option value="">Chọn...</option>
+          <option value="0">Không (0)</option>
+          <option value="1">&lt;1/tuần (1)</option>
+          <option value="2">1–2/tuần (2)</option>
+          <option value="3">≥3/tuần (3)</option>
+        </select>
+      </div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label>Ảnh hưởng sinh hoạt hàng ngày — PSQI-9</label><select id="f_psqi9" onchange="calcPSQI()"><option value="0">Không ảnh hưởng (0)</option><option value="1">Ảnh hưởng nhẹ (1)</option><option value="2">Ảnh hưởng vừa (2)</option><option value="3">Ảnh hưởng nhiều (3)</option></select></div>
+      <div class="form-group">
+        <label>Ảnh hưởng sinh hoạt hàng ngày — PSQI-9</label>
+        <select id="f_psqi9" onchange="calcPSQI()">
+          <option value="">Chọn...</option>
+          <option value="0">Không ảnh hưởng (0)</option>
+          <option value="1">Ảnh hưởng nhẹ (1)</option>
+          <option value="2">Ảnh hưởng vừa (2)</option>
+          <option value="3">Ảnh hưởng nhiều (3)</option>
+        </select>
+      </div>
     </div>
     <div class="score-row" id="psqi-score">
       <div class="score-cell"><div class="score-val" id="psqi-total">—</div><div class="score-lbl">Tổng PSQI (/21)</div></div>
@@ -796,6 +944,9 @@ function buildStep3() {
           ${hlLabels.map((lbl,vi) => `<label class="opt-chip" onclick="selectChip(this)"><input type="radio" name="hl_${i}" value="${vi+1}"><span>${lbl}</span></label>`).join("")}
         </div>
       </div>`).join("");
+
+  // [FIX#5] Select "vận động": option đầu có value rõ ràng (không để trống)
+  // [FIX#4] Select khác: thêm option trống "Chọn..." để tránh default value ngầm
   document.getElementById("step3").innerHTML = `
   <div class="card">
     <div class="card-title">C1. Thông tin phẫu thuật thực tế</div>
@@ -809,7 +960,14 @@ function buildStep3() {
     </div>
     <div class="form-row">
       <div class="form-group"><label>Mất máu ước tính (mL)</label><input type="number" id="f_matMau" placeholder="200"></div>
-      <div class="form-group"><label>Truyền máu</label><select id="f_truyenMau"><option value="Không">Không</option><option value="Có">Có</option></select></div>
+      <div class="form-group">
+        <label>Truyền máu</label>
+        <select id="f_truyenMau">
+          <option value="">Chọn...</option>
+          <option value="Không">Không</option>
+          <option value="Có">Có</option>
+        </select>
+      </div>
     </div>
   </div>
   <div class="card">
@@ -821,11 +979,42 @@ function buildStep3() {
   <div class="card">
     <div class="card-title">C4. Vận động sớm & biến chứng</div>
     <div class="form-row">
-      <div class="form-group"><label>Thời điểm vận động đầu tiên</label><select id="f_vanDong"><option value="">&lt;12h</option><option>12–24h</option><option>24–48h</option><option>&gt;48h</option><option>Chưa vận động được</option></select></div>
-      <div class="form-group"><label>Khả năng tự vận động ngày 1</label><select id="f_khanangVD"><option>Tốt</option><option>Trung bình</option><option>Kém</option><option>Không thể</option></select></div>
+      <div class="form-group">
+        <label>Thời điểm vận động đầu tiên</label>
+        <select id="f_vanDong">
+          <option value="">Chọn...</option>
+          <option value="<12h">&lt;12h</option>
+          <option value="12–24h">12–24h</option>
+          <option value="24–48h">24–48h</option>
+          <option value=">48h">&gt;48h</option>
+          <option value="Chưa vận động được">Chưa vận động được</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Khả năng tự vận động ngày 1</label>
+        <select id="f_khanangVD">
+          <option value="">Chọn...</option>
+          <option value="Tốt">Tốt</option>
+          <option value="Trung bình">Trung bình</option>
+          <option value="Kém">Kém</option>
+          <option value="Không thể">Không thể</option>
+        </select>
+      </div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label>Biến chứng sau PT</label><select id="f_bienChung"><option>Không có</option><option>Chảy máu/tụ máu</option><option>Nhiễm trùng vết mổ</option><option>DVT</option><option>Thuyên tắc phổi</option><option>Đau khó kiểm soát</option><option>Khác</option></select></div>
+      <div class="form-group">
+        <label>Biến chứng sau PT</label>
+        <select id="f_bienChung">
+          <option value="">Chọn...</option>
+          <option value="Không có">Không có</option>
+          <option value="Chảy máu/tụ máu">Chảy máu/tụ máu</option>
+          <option value="Nhiễm trùng vết mổ">Nhiễm trùng vết mổ</option>
+          <option value="DVT">DVT</option>
+          <option value="Thuyên tắc phổi">Thuyên tắc phổi</option>
+          <option value="Đau khó kiểm soát">Đau khó kiểm soát</option>
+          <option value="Khác">Khác</option>
+        </select>
+      </div>
       <div class="form-group"><label>Thời gian nằm viện sau PT (ngày)</label><input type="number" id="f_tgNamVien" placeholder="3"></div>
     </div>
   </div>
@@ -854,37 +1043,53 @@ function calcHADS() {
 }
 
 function calcPSQI() {
-  const gi = id => parseInt(document.getElementById(id)?.value  || 0) || 0;
-  const gf = id => parseFloat(document.getElementById(id)?.value || 0) || 0;
-  const C1  = gi("f_psqi6");
+  const gi = id => {
+    const el = document.getElementById(id);
+    if (!el || el.value === "") return null;
+    return parseInt(el.value) || 0;
+  };
+  const gf = id => {
+    const el = document.getElementById(id);
+    if (!el || el.value === "") return null;
+    return parseFloat(el.value) || 0;
+  };
+
+  const psqi6 = gi("f_psqi6");
+  const C1  = psqi6 !== null ? psqi6 : 0;
+
   const p2  = gf("f_psqi2"), p5a = gi("f_psqi5a");
-  const c2r = p2 <= 15 ? 0 : p2 <= 30 ? 1 : p2 <= 60 ? 2 : 3;
-  const C2  = Math.round((c2r + p5a) / 2);
+  const c2r = p2 === null ? 0 : p2 <= 15 ? 0 : p2 <= 30 ? 1 : p2 <= 60 ? 2 : 3;
+  const C2  = (p5a !== null) ? Math.round((c2r + p5a) / 2) : c2r;
+
   const p4  = gf("f_psqi4");
-  const C3  = p4 > 7 ? 0 : p4 >= 6 ? 1 : p4 >= 5 ? 2 : 3;
+  const C3  = p4 === null ? 0 : p4 > 7 ? 0 : p4 >= 6 ? 1 : p4 >= 5 ? 2 : 3;
+
   let C4 = 0;
   const t1 = (document.getElementById("f_psqi1")?.value || "").split(":");
   const t3 = (document.getElementById("f_psqi3")?.value || "").split(":");
-  if (t1.length === 2 && t3.length === 2 && p4 > 0) {
+  if (t1.length === 2 && t3.length === 2 && p4 !== null && p4 > 0) {
     const bed = +t1[0]*60 + +t1[1], wake = +t3[0]*60 + +t3[1];
     const inBed = wake > bed ? wake - bed : wake + 1440 - bed;
     const eff   = inBed > 0 ? p4 * 60 / inBed * 100 : 0;
     C4 = eff >= 85 ? 0 : eff >= 75 ? 1 : eff >= 65 ? 2 : 3;
   }
+
   let dist = 0;
   for (let i = 0; i < 9; i++) { const s = document.querySelector(`input[name="psqi_5_${i}"]:checked`); if (s) dist += +s.value; }
   const C5 = dist === 0 ? 0 : dist <= 9 ? 1 : dist <= 18 ? 2 : 3;
-  const C6 = gi("f_psqi7");
-  const C7 = Math.round((gi("f_psqi8") + gi("f_psqi9")) / 2);
+
+  const psqi7 = gi("f_psqi7"); const C6 = psqi7 !== null ? psqi7 : 0;
+  const psqi8 = gi("f_psqi8"); const psqi9 = gi("f_psqi9");
+  const C7 = (psqi8 !== null && psqi9 !== null) ? Math.round((psqi8 + psqi9) / 2) : 0;
+
   const total = C1 + C2 + C3 + C4 + C5 + C6 + C7;
   const tv = document.getElementById("psqi-total"), ti = document.getElementById("psqi-interp");
   if (tv) tv.textContent = total;
   if (ti) { ti.textContent = total >= 5 ? "Kém (≥5)" : "Tốt (<5)"; ti.style.color = total >= 5 ? "var(--red)" : "var(--green)"; }
 }
 
-// ── Selection highlight (tương thích mobile cũ, không dùng :has()) ───────────
+// ── Selection highlight ───────────────────────────────────────
 function selectOpt(label) {
-  // Bỏ active tất cả opt-label cùng nhóm
   const input = label.querySelector("input[type=radio]");
   if (!input) return;
   const name = input.name;
@@ -895,7 +1100,6 @@ function selectOpt(label) {
 }
 
 function selectChip(label) {
-  // Bỏ active tất cả opt-chip cùng nhóm
   const input = label.querySelector("input[type=radio]");
   if (!input) return;
   const name = input.name;
@@ -905,7 +1109,6 @@ function selectChip(label) {
   label.classList.add("chip-selected");
 }
 
-// Khôi phục trạng thái highlight khi applyFormData load lại dữ liệu
 function restoreSelectionHighlights() {
   document.querySelectorAll(".opt-label input[type=radio]:checked").forEach(r => {
     r.closest(".opt-label")?.classList.add("opt-selected");
