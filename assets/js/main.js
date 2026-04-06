@@ -254,9 +254,13 @@ function showStep(n) {
     document.getElementById(id).className = "step-item" +
       (i + 1 === n ? " active" : i + 1 < n ? " done" : "");
   });
+  // [FIX-UPDATE] Phiếu đã hoàn thành (buoc>=3): hiện nút "Lưu cập nhật bước này" thay cho luồng 3 bước
+  const isCompleted = currentHighestStep >= 3;
   document.getElementById("btn-prev").style.display   = n > 1 ? "inline-block" : "none";
-  document.getElementById("btn-next").style.display   = n < 3 ? "inline-block" : "none";
-  document.getElementById("btn-finish").style.display = n === 3 ? "inline-block" : "none";
+  document.getElementById("btn-next").style.display   = (!isCompleted && n < 3) ? "inline-block" : "none";
+  document.getElementById("btn-finish").style.display = (!isCompleted && n === 3) ? "inline-block" : "none";
+  const btnUpdate = document.getElementById("btn-update");
+  if (btnUpdate) btnUpdate.style.display = isCompleted ? "inline-block" : "none";
   const local = getLocalDraft(currentMaPhieu);
   updateFooterStatus(
     local?.updated_at
@@ -354,6 +358,49 @@ async function finishForm() {
   } catch (e) {
     showAlert("form-alert",
       `Không lưu được lên server (${e.message}). Phiếu đã lưu nháp trên máy — vui lòng thử lại khi có mạng.`,
+      "error"
+    );
+  } finally {
+    showLoading(false);
+  }
+}
+
+// [FIX-UPDATE] Lưu cập nhật đúng bước đang chỉnh — dùng khi phiếu đã hoàn thành
+async function saveCurrentStepUpdate() {
+  const errors = validateStep(currentStep);
+  if (errors.length > 0) {
+    showAlert("form-alert", "Vui lòng điền đầy đủ: " + errors.join(" · "), "error");
+    return;
+  }
+  // Lưu local ngay (chỉ bước hiện tại, merge vào existing)
+  saveLocalProgress(false);
+  showLoading(true);
+  try {
+    const existingDraft = getLocalDraft(currentMaPhieu) || {};
+    const stepData = collectStep(currentStep);
+    // Gửi lên server: merge toàn bộ data để AppScript upsert đúng bảng
+    const data = { ...(existingDraft.data || {}), ...stepData, ma_phieu: currentMaPhieu };
+    data.buoc          = currentStep;   // AppScript lưu vào đúng sheet BuocI/II/III
+    data.dieu_tra_vien = currentUser?.name || "";
+    await apiPost(data);
+    // Đánh dấu synced, cập nhật draft
+    const updatedData = { ...(existingDraft.data || {}), ...stepData, ma_phieu: currentMaPhieu };
+    upsertLocalDraft({
+      ...existingDraft,
+      ma_phieu:   currentMaPhieu,
+      buoc:       Math.max(Number(existingDraft.buoc || 0), 3),
+      last_step:  currentStep,
+      updated_at: new Date().toISOString(),
+      local_only: false,
+      synced:     true,
+      user:       currentUser?.name || "",
+      data:       updatedData,
+    });
+    showAlert("form-alert", `✓ Đã cập nhật bước ${currentStep} lên hệ thống.`, "success");
+    updateFooterStatus(`Đã lưu hệ thống lúc ${formatWhen(new Date().toISOString())}`);
+  } catch (e) {
+    showAlert("form-alert",
+      `Không lưu được lên server (${e.message}). Nháp đã giữ trên máy.`,
       "error"
     );
   } finally {
