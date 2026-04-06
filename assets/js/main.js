@@ -391,44 +391,111 @@ async function finishForm() {
   }
 }
 
-// [FIX-UPDATE] Lưu cập nhật đúng bước đang chỉnh — dùng khi phiếu đã hoàn thành
-async function saveCurrentStepUpdate() {
+// Mapping field → bước (mirror của AppScript STEP*_MAP)
+const STEP1_FIELDS = new Set([
+  "ho_ten","so_ho_so","ngay_sinh","gioi_tinh","nghe_nghiep","dia_chi","hoc_van","dan_toc",
+  "ngay_nhap_vien","ngay_pt_du_kien","can_nang","chieu_cao","bmi",
+  "chan_doan","loai_pt","vung_pt","pp_pt","vo_cam","vas_nhap_vien","dieu_tra_vien"
+]);
+const STEP2_FIELDS = new Set([
+  "hads_1","hads_2","hads_3","hads_4","hads_5","hads_6","hads_7",
+  "hads_8","hads_9","hads_10","hads_11","hads_12","hads_13","hads_14",
+  "psqi1","psqi2","psqi3","psqi4","psqi5a","psqi6",
+  "psqi_5_0","psqi_5_1","psqi_5_2","psqi_5_3","psqi_5_4",
+  "psqi_5_5","psqi_5_6","psqi_5_7","psqi_5_8",
+  "psqi7","psqi8","psqi9"
+]);
+const STEP3_FIELDS = new Set([
+  "ngay_pt_thuc","tg_pt","pp_pt_thuc","vo_cam_thuc","mat_mau","truyen_mau",
+  "vas1","vas2","vas3","van_dong","kha_nang_vd","bien_chung","tg_nam_vien",
+  "hl_0","hl_1","hl_2","hl_3","hl_4","nhan_xet"
+]);
+
+// So sánh 2 giá trị — coi null/""/undefined là như nhau
+function valChanged(a, b) {
+  const empty = v => v === null || v === undefined || v === "";
+  if (empty(a) && empty(b)) return false;
+  return String(a ?? "") !== String(b ?? "");
+}
+
+// Phát hiện bước nào có field thay đổi so với snapshot
+function detectChangedSteps(current, snapshot) {
+  const changed = new Set();
+  for (const [k, v] of Object.entries(current)) {
+    if (k === "ma_phieu") continue;
+    if (!valChanged(v, snapshot[k])) continue;
+    if (STEP1_FIELDS.has(k)) changed.add(1);
+    else if (STEP2_FIELDS.has(k)) changed.add(2);
+    else if (STEP3_FIELDS.has(k)) changed.add(3);
+  }
+  return changed;
+}
+
+// [FIX-UPDATE] Chỉ gửi bước nào có thay đổi so với data đã lưu trên server
+async function saveAllStepsUpdate() {
   const errors = validateStep(currentStep);
   if (errors.length > 0) {
     showAlert("form-alert", "Vui lòng điền đầy đủ: " + errors.join(" · "), "error");
     return;
   }
-  // Lưu local ngay (chỉ bước hiện tại, merge vào existing)
+  // Merge bước đang chỉnh vào draft local
   saveLocalProgress(false);
   showLoading(true);
   try {
-    const existingDraft = getLocalDraft(currentMaPhieu) || {};
-    const stepData = collectStep(currentStep);
-    // Gửi lên server: merge toàn bộ data để AppScript upsert đúng bảng
-    const data = { ...(existingDraft.data || {}), ...stepData, ma_phieu: currentMaPhieu };
-    data.buoc          = currentStep;   // AppScript lưu vào đúng sheet BuocI/II/III
-    data.dieu_tra_vien = currentUser?.name || "";
-    await apiPost(data);
-    // Đánh dấu synced, cập nhật draft
-    const updatedData = { ...(existingDraft.data || {}), ...stepData, ma_phieu: currentMaPhieu };
-    upsertLocalDraft({
-      ...existingDraft,
-      ma_phieu:   currentMaPhieu,
-      buoc:       Math.max(Number(existingDraft.buoc || 0), 3),
-      last_step:  currentStep,
-      updated_at: new Date().toISOString(),
-      local_only: false,
-      synced:     true,
-      user:       currentUser?.name || "",
-      data:       updatedData,
-    });
-    showAlert("form-alert", `✓ Đã cập nhật bước ${currentStep} lên hệ thống.`, "success");
-    updateFooterStatus(`Đã lưu hệ thống lúc ${formatWhen(new Date().toISOString())}`);
-  } catch (e) {
-    showAlert("form-alert",
-      `Không lưu được lên server (${e.message}). Nháp đã giữ trên máy.`,
-      "error"
+    const draft    = getLocalDraft(currentMaPhieu) || {};
+    const newData  = { ...(draft.data || {}), ma_phieu: currentMaPhieu };
+    const dtv      = currentUser?.name || "";
+
+    // Snapshot = data từ server (remote cache) — dùng để so sánh
+    const remote   = danhSachCache.find(r => r.ma_phieu === currentMaPhieu) || {};
+
+    // Phát hiện bước nào thay đổi
+    const changedSteps = detectChangedSteps(newData, remote);
+
+    if (changedSteps.size === 0) {
+      showAlert("form-alert", "Không có dữ liệu nào thay đổi so với bản đã lưu.", "info");
+      showLoading(false);
+      return;
+    }
+
+    // Gửi song song chỉ những bước có thay đổi
+    const tasks = [...changedSteps].map(buoc =>
+      apiPost({ ...newData, buoc, dieu_tra_vien: dtv })
+        .then(() => ({ buoc, ok: true }))
+        .catch(e => ({ buoc, ok: false, err: e.message }))
     );
+    const results = await Promise.all(tasks);
+
+    const failed  = results.filter(r => !r.ok);
+    const success = results.filter(r => r.ok);
+
+    if (failed.length === 0) {
+      upsertLocalDraft({
+        ...draft,
+        ma_phieu:   currentMaPhieu,
+        buoc:       3,
+        last_step:  currentStep,
+        updated_at: new Date().toISOString(),
+        local_only: false,
+        synced:     true,
+        user:       dtv,
+        data:       newData,
+      });
+      const label = [...changedSteps].map(b => `Bước ${b}`).join(", ");
+      showAlert("form-alert", `✓ Đã cập nhật ${label} lên Google Sheets.`, "success");
+      updateFooterStatus(`Đã lưu hệ thống lúc ${formatWhen(new Date().toISOString())}`);
+      // Cập nhật remote cache để lần sau so sánh đúng
+      const idx = danhSachCache.findIndex(r => r.ma_phieu === currentMaPhieu);
+      if (idx >= 0) danhSachCache[idx] = { ...danhSachCache[idx], ...newData };
+    } else {
+      const errMsg = failed.map(r => `Bước ${r.buoc}: ${r.err}`).join(" · ");
+      showAlert("form-alert",
+        `Lưu được ${success.length}/${results.length} bước. Lỗi: ${errMsg}`,
+        "error"
+      );
+    }
+  } catch (e) {
+    showAlert("form-alert", `Lỗi: ${e.message}`, "error");
   } finally {
     showLoading(false);
   }
@@ -745,44 +812,72 @@ const FIELD_ID_MAP = {
   tg_nam_vien: "f_tgNamVien", nhan_xet: "f_nhanXet",
 };
 
-// [FIX-DATE] Google Sheets trả về ngày dạng ISO "2000-01-15T00:00:00+07:00"
-// nhưng <input type="date"> chỉ nhận "YYYY-MM-DD" → cần cắt phần thừa
+// [FIX-DATE] Google Sheets tự convert string thành Date object khi đọc lại:
+// - "2000-01-15" → Date → normalizeValue trả về "2000-01-15T00:00:00+07:00"
+//   → <input type="date"> chỉ nhận "YYYY-MM-DD"
+// - "22:30" (giờ ngủ) → Date (hôm nay lúc 22:30) → "2026-04-06T22:30:00+07:00"
+//   → <input type="time"> chỉ nhận "HH:MM"
+// - 30.0 (số phút) → cần String để gán vào input
+
 const DATE_FIELDS = new Set(["ngay_sinh","ngay_nhap_vien","ngay_pt_du_kien","ngay_pt_thuc"]);
+const TIME_FIELDS = new Set(["psqi1","psqi3"]);
+
 function normalizeDateForInput(field, value) {
-  if (!DATE_FIELDS.has(field)) return value;
-  if (!value) return value;
+  if (!value && value !== 0) return value;
   const s = String(value);
-  // Nếu có "T" (ISO datetime) → lấy phần YYYY-MM-DD trước chữ T
-  const tIdx = s.indexOf("T");
-  if (tIdx > 0) return s.slice(0, tIdx);
-  // Nếu dạng dd/MM/yyyy → convert sang YYYY-MM-DD
-  const dmyMatch = s.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
-  if (dmyMatch) return `${dmyMatch[3]}-${dmyMatch[2]}-${dmyMatch[1]}`;
+
+  // Trường giờ (HH:MM) — Sheets biến "22:30" → ISO datetime
+  if (TIME_FIELDS.has(field)) {
+    // ISO datetime "2026-04-06T22:30:00+07:00" → lấy "HH:MM" từ phần T
+    const tMatch = s.match(/T(\d{2}:\d{2})/);
+    if (tMatch) return tMatch[1];
+    // Đã đúng dạng HH:MM rồi
+    if (/^\d{2}:\d{2}$/.test(s)) return s;
+    return value;
+  }
+
+  // Trường ngày (YYYY-MM-DD)
+  if (DATE_FIELDS.has(field)) {
+    const tIdx = s.indexOf("T");
+    if (tIdx > 0) return s.slice(0, tIdx);
+    const dmyMatch = s.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+    if (dmyMatch) return `${dmyMatch[3]}-${dmyMatch[2]}-${dmyMatch[1]}`;
+    return value;
+  }
+
   return value;
 }
+
+// Các field là select với option value là số nguyên — nếu server trả về float (1.0) thì không khớp
+const INT_FIELDS = new Set(["psqi5a","psqi6","psqi7","psqi8","psqi9"]);
 
 function applyFormData(data = {}) {
   Object.entries(FIELD_ID_MAP).forEach(([field, id]) => {
     const el = document.getElementById(id);
     if (!el || data[field] === undefined || data[field] === null || data[field] === "") return;
-    el.value = normalizeDateForInput(field, data[field]);
+    let val = normalizeDateForInput(field, data[field]);
+    // Float → int cho các select dùng option value số nguyên
+    if (INT_FIELDS.has(field) && val !== "" && val !== null) val = String(parseInt(val, 10));
+    el.value = val;
   });
+  // [FIX-FLOAT] Server có thể trả về 0.0, 1.0 thay vì 0, 1
+  // → querySelector [value="0.0"] không tìm được radio có value="0" → dùng parseInt
   for (let i = 1; i <= 14; i++) {
     const v = data[`hads_${i}`];
     if (v === undefined || v === null || v === "") continue;
-    const r = document.querySelector(`input[name="hads_${i}"][value="${v}"]`);
+    const r = document.querySelector(`input[name="hads_${i}"][value="${parseInt(v, 10)}"]`);
     if (r) r.checked = true;
   }
   for (let i = 0; i < 9; i++) {
     const v = data[`psqi_5_${i}`];
     if (v === undefined || v === null || v === "") continue;
-    const r = document.querySelector(`input[name="psqi_5_${i}"][value="${v}"]`);
+    const r = document.querySelector(`input[name="psqi_5_${i}"][value="${parseInt(v, 10)}"]`);
     if (r) r.checked = true;
   }
   for (let i = 0; i < 5; i++) {
     const v = data[`hl_${i}`];
     if (v === undefined || v === null || v === "") continue;
-    const r = document.querySelector(`input[name="hl_${i}"][value="${v}"]`);
+    const r = document.querySelector(`input[name="hl_${i}"][value="${parseInt(v, 10)}"]`);
     if (r) r.checked = true;
   }
   updateRangeIndicators();
