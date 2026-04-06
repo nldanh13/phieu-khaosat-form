@@ -296,83 +296,83 @@ body{font-family:'Be Vietnam Pro',system-ui,sans-serif;font-size:14px;line-heigh
   background: var(--slate-50);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 12px 14px;
+  padding: 14px;
 }
 
 .q-header {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 
 .q-text {
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: 14px;
+  line-height: 1.6;
   color: var(--text);
   flex: 1;
+  word-break: break-word;
 }
 
-.opt-list { display: flex; flex-direction: column; gap: 6px; }
+.opt-list { display: flex; flex-direction: column; gap: 8px; }
 
 .opt-label {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  border: 1.5px solid var(--border);
   background: var(--surface);
   cursor: pointer;
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 1.4;
   color: var(--slate-700);
   transition: background .12s, border-color .12s;
+  min-height: 48px;
 }
 
 .opt-label:hover { background: var(--blue-50); border-color: var(--blue-200); }
 
 .opt-label input[type=radio] {
   accent-color: var(--primary);
-  width: 16px; height: 16px;
+  width: 18px; height: 18px;
   flex-shrink: 0;
   cursor: pointer;
 }
 
 .opt-label.opt-selected {
   background: var(--blue-50);
-  border-color: var(--blue-400);
+  border-color: var(--blue-500);
 }
 
 .opt-label.opt-selected span { color: var(--primary); font-weight: 600; }
 
 /* Chip-style options — for PSQI 5b-5j and Likert */
-.opt-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
+.opt-row { display: flex; flex-wrap: wrap; gap: 8px; }
 
 .opt-chip {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 7px 12px;
+  padding: 9px 14px;
   border-radius: 999px;
   border: 1.5px solid var(--border);
   background: var(--surface);
   cursor: pointer;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--slate-600);
   transition: all .12s;
   white-space: nowrap;
+  min-height: 40px;
 }
 
 .opt-chip:hover { background: var(--blue-50); border-color: var(--blue-300); }
 
 .opt-chip input[type=radio] {
   accent-color: var(--primary);
-  width: 14px; height: 14px;
+  width: 15px; height: 15px;
   flex-shrink: 0;
   cursor: pointer;
 }
