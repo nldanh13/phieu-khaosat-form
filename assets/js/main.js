@@ -587,6 +587,7 @@ function applyFormData(data = {}) {
   if (typeof calcBMI  === "function") calcBMI();
   if (typeof calcHADS === "function") calcHADS();
   if (typeof calcPSQI === "function") calcPSQI();
+  restoreSelectionHighlights();
 }
 
 function updateRangeIndicators() {
@@ -735,7 +736,11 @@ function buildStep2() {
         <span class="q-text">${h.q}</span>
       </div>
       <div class="opt-list">
-        ${h.opts.map((o,vi) => `<label class="opt-label"><input type="radio" name="hads_${h.id}" value="${vi}" onchange="calcHADS()"><span>${o}</span></label>`).join("")}
+        ${h.opts.map((o,vi) => `
+          <label class="opt-label" onclick="selectOpt(this)">
+            <input type="radio" name="hads_${h.id}" value="${vi}" onchange="calcHADS()">
+            <span>${o}</span>
+          </label>`).join("")}
       </div>
     </div>`).join("");
 
@@ -746,7 +751,7 @@ function buildStep2() {
       <div class="q-card">
         <div class="q-text" style="margin-bottom:8px">${q}</div>
         <div class="opt-row">
-          ${psqi5Labels.map((lbl,v) => `<label class="opt-chip"><input type="radio" name="psqi_5_${i}" value="${v}" onchange="calcPSQI()"><span>${lbl}</span></label>`).join("")}
+          ${psqi5Labels.map((lbl,v) => `<label class="opt-chip" onclick="selectChip(this)"><input type="radio" name="psqi_5_${i}" value="${v}" onchange="calcPSQI()"><span>${lbl}</span></label>`).join("")}
         </div>
       </div>`).join("");
 
@@ -799,7 +804,7 @@ function buildStep3() {
       <div class="q-card">
         <div class="q-text" style="margin-bottom:8px">${q}</div>
         <div class="opt-row">
-          ${hlLabels.map((lbl,vi) => `<label class="opt-chip"><input type="radio" name="hl_${i}" value="${vi+1}"><span>${lbl}</span></label>`).join("")}
+          ${hlLabels.map((lbl,vi) => `<label class="opt-chip" onclick="selectChip(this)"><input type="radio" name="hl_${i}" value="${vi+1}"><span>${lbl}</span></label>`).join("")}
         </div>
       </div>`).join("");
   document.getElementById("step3").innerHTML = `
@@ -886,6 +891,39 @@ function calcPSQI() {
   const tv = document.getElementById("psqi-total"), ti = document.getElementById("psqi-interp");
   if (tv) tv.textContent = total;
   if (ti) { ti.textContent = total >= 5 ? "Kém (≥5)" : "Tốt (<5)"; ti.style.color = total >= 5 ? "var(--red)" : "var(--green)"; }
+}
+
+// ── Selection highlight (tương thích mobile cũ, không dùng :has()) ───────────
+function selectOpt(label) {
+  // Bỏ active tất cả opt-label cùng nhóm
+  const input = label.querySelector("input[type=radio]");
+  if (!input) return;
+  const name = input.name;
+  document.querySelectorAll(`input[name="${name}"]`).forEach(r => {
+    r.closest(".opt-label")?.classList.remove("opt-selected");
+  });
+  label.classList.add("opt-selected");
+}
+
+function selectChip(label) {
+  // Bỏ active tất cả opt-chip cùng nhóm
+  const input = label.querySelector("input[type=radio]");
+  if (!input) return;
+  const name = input.name;
+  document.querySelectorAll(`input[name="${name}"]`).forEach(r => {
+    r.closest(".opt-chip")?.classList.remove("chip-selected");
+  });
+  label.classList.add("chip-selected");
+}
+
+// Khôi phục trạng thái highlight khi applyFormData load lại dữ liệu
+function restoreSelectionHighlights() {
+  document.querySelectorAll(".opt-label input[type=radio]:checked").forEach(r => {
+    r.closest(".opt-label")?.classList.add("opt-selected");
+  });
+  document.querySelectorAll(".opt-chip input[type=radio]:checked").forEach(r => {
+    r.closest(".opt-chip")?.classList.add("chip-selected");
+  });
 }
 
 // ── DOMContentLoaded ─────────────────────────────────────────

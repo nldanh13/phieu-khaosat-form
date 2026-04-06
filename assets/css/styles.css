@@ -338,12 +338,12 @@ body{font-family:'Be Vietnam Pro',system-ui,sans-serif;font-size:14px;line-heigh
   cursor: pointer;
 }
 
-.opt-label input[type=radio]:checked + span { color: var(--primary); font-weight: 600; }
-
-.opt-label:has(input:checked) {
+.opt-label.opt-selected {
   background: var(--blue-50);
   border-color: var(--blue-400);
 }
+
+.opt-label.opt-selected span { color: var(--primary); font-weight: 600; }
 
 /* Chip-style options — for PSQI 5b-5j and Likert */
 .opt-row {
@@ -377,10 +377,10 @@ body{font-family:'Be Vietnam Pro',system-ui,sans-serif;font-size:14px;line-heigh
   cursor: pointer;
 }
 
-.opt-chip:has(input:checked) {
+.opt-chip.chip-selected {
   background: var(--primary);
   border-color: var(--primary);
   color: #fff;
 }
 
-.opt-chip:has(input:checked) input { accent-color: #fff; }
+.opt-chip.chip-selected input { accent-color: #fff; }
