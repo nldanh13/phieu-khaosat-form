@@ -218,7 +218,26 @@ function showScreen(name, options = {}) {
     document.querySelectorAll(".step-item").forEach((item, i) => {
       item.onclick = () => jumpToStep(i + 1);
     });
-    if (record) applyFormData(record);
+    if (record) {
+      applyFormData(record);
+      // [FIX-SEED] Nếu chưa có draft local, tạo draft seed từ remote data
+      // Đảm bảo autosave sau đó sẽ merge vào data đầy đủ, không bị mất bước khác
+      if (!getLocalDraft(currentMaPhieu)) {
+        const seedData = { ...record };
+        delete seedData.ma_phieu; delete seedData.buoc; delete seedData.last_step;
+        delete seedData.updated_at; delete seedData.local_only; delete seedData.has_local; delete seedData.synced;
+        upsertLocalDraft({
+          ma_phieu:   currentMaPhieu,
+          buoc:       Math.max(Number(record.buoc || 0), 1),
+          last_step:  Number(record.buoc || 1),
+          updated_at: record.updated_at || new Date().toISOString(),
+          local_only: false,
+          synced:     true,
+          user:       currentUser?.name || "",
+          data:       { ...seedData, ma_phieu: currentMaPhieu },
+        });
+      }
+    }
     const initialStep = Math.max(1, Math.min(3, Number(options.step || record?.last_step || (record?.buoc || 1))));
     hideAlert("form-alert");
     updateModeBanner(record);
@@ -299,14 +318,15 @@ async function finishForm() {
   saveLocalProgress(false);
   showLoading(true);
   try {
-    const data = collectAllStepsData();
-    data.ma_phieu = currentMaPhieu;
+    // [FIX-OVERWRITE] Chỉ collect bước đang active (bước 3) khi finish
+    // Merge với existing draft để không mất data bước 1 & 2
+    const existingDraft = getLocalDraft(currentMaPhieu) || {};
+    const step3Data = collectStep(3);
+    const data = { ...(existingDraft.data || {}), ...step3Data, ma_phieu: currentMaPhieu };
     data.buoc     = 3;
     data.dieu_tra_vien = currentUser?.name || "";
     await apiPost(data);
-    // [FIX] Cập nhật draft local: synced=true nhưng GIỮ LẠI toàn bộ data
-    // Không xóa draft ngay — chờ server cache refresh xong mới xóa
-    const existingDraft = getLocalDraft(currentMaPhieu) || {};
+    // Lưu draft với toàn bộ data đã merge
     upsertLocalDraft({
       ...existingDraft,
       ma_phieu:   currentMaPhieu,
@@ -316,7 +336,7 @@ async function finishForm() {
       local_only: false,
       synced:     true,
       user:       currentUser?.name || "",
-      data: { ...(existingDraft.data || {}), ...collectAllStepsData(), ma_phieu: currentMaPhieu },
+      data:       { ...(existingDraft.data || {}), ...step3Data, ma_phieu: currentMaPhieu },
     });
     showAlert("form-alert", `Phiếu ${currentMaPhieu} đã lưu hoàn thành.`, "success");
     const savedMa = currentMaPhieu;
@@ -405,6 +425,9 @@ async function saveCurrentStep() {
 function saveLocalProgress(showMessage = false) {
   if (!currentMaPhieu || !document.getElementById("screen-new")?.classList.contains("active")) return;
   const existing = getLocalDraft(currentMaPhieu) || {};
+  // [FIX-OVERWRITE] Chỉ collect bước ĐANG HIỂN THỊ để tránh overwrite
+  // dữ liệu bước khác bằng "" (DOM ẩn trả về rỗng)
+  const currentStepData = collectStep(currentStep);
   const record = {
     ma_phieu:   currentMaPhieu,
     buoc:       Math.max(Number(existing.buoc || 0), Number(currentHighestStep || 0), Number(currentStep || 0), 1),
@@ -413,7 +436,8 @@ function saveLocalProgress(showMessage = false) {
     local_only: !hasRemoteRecord(currentMaPhieu),
     synced:     false,
     user:       currentUser?.name || "",
-    data: { ...existing.data, ...collectAllStepsData(), ma_phieu: currentMaPhieu },
+    // Merge: giữ nguyên data cũ, chỉ cập nhật bước hiện tại
+    data: { ...(existing.data || {}), ...currentStepData, ma_phieu: currentMaPhieu },
   };
   upsertLocalDraft(record);
   updateFooterStatus(`Đã lưu nháp lúc ${formatWhen(record.updated_at)}`);
@@ -422,6 +446,8 @@ function saveLocalProgress(showMessage = false) {
 
 function markLocalSynced() {
   const existing = getLocalDraft(currentMaPhieu) || {};
+  // [FIX-OVERWRITE] Chỉ update bước hiện tại, giữ nguyên data các bước khác
+  const currentStepData = collectStep(currentStep);
   upsertLocalDraft({
     ...existing,
     ma_phieu:   currentMaPhieu,
@@ -430,10 +456,8 @@ function markLocalSynced() {
     updated_at: new Date().toISOString(),
     local_only: false, synced: true,
     user:       currentUser?.name || "",
-    data: { ...(existing.data || {}), ...collectAllStepsData(), ma_phieu: currentMaPhieu },
+    data: { ...(existing.data || {}), ...currentStepData, ma_phieu: currentMaPhieu },
   });
-  // [FIX] Bỏ việc tự xóa draft ở đây — để finishForm/caller quyết định xóa sau khi server cache đã refresh
-  // Tránh mất thông tin khi dashboard render trước khi loadDanhSach() xong
 }
 
 function bindAutosave() {
