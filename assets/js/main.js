@@ -36,20 +36,20 @@ async function apiGet(action = "", params = {}) {
 }
 
 async function apiPost(payload) {
-  // GAS có 2 vấn đề CORS:
-  // 1. Content-Type: application/json trigger CORS preflight → GAS không xử lý OPTIONS → bị block
-  // 2. GAS redirect 302, fetch follow redirect đổi POST→GET → mất body
-  // Giải pháp: text/plain không trigger preflight, GAS đọc qua e.postData.contents
-  // redirect: "follow" để tự theo redirect của GAS
-  const res = await fetch(API_URL, {
-    method: "POST",
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify(payload),
-    redirect: "follow",
-  });
-  // GAS đôi khi trả về 200 với body rỗng sau redirect — kiểm tra trước
+  // GAS KHÔNG xử lý CORS preflight (OPTIONS) — giới hạn cứng của nền tảng.
+  // Mọi header tùy chỉnh hoặc Content-Type khác "text/plain" đều trigger preflight → bị block.
+  // Giải pháp dứt điểm: dùng no-cors mode + encode data vào URL param (GET).
+  // GAS nhận qua doGet(e) → e.parameter.data
+  // Nhược điểm: không đọc được response body → dùng "fire-and-forget" + xác nhận qua GET sau.
+  
+  // Encode payload vào URL để gửi qua GET (tránh preflight hoàn toàn)
+  const url = new URL(API_URL);
+  url.searchParams.set("action", "save");
+  url.searchParams.set("data", JSON.stringify(payload));
+  
+  const res = await fetch(url.toString(), { method: "GET" });
   const text = await res.text();
-  if (!text || !text.trim()) throw new Error("Server không trả về dữ liệu (có thể chưa deploy đúng)");
+  if (!text || !text.trim()) throw new Error("Server không trả về dữ liệu");
   let data = null;
   try { data = JSON.parse(text); } catch { throw new Error("API trả về dữ liệu không hợp lệ: " + text.slice(0, 100)); }
   if (!data?.success) throw new Error(data?.error || ("Lỗi " + res.status));
