@@ -35,25 +35,51 @@ async function apiGet(action = "", params = {}) {
   return data;
 }
 
+// Loại bỏ field null/"" khỏi payload trước khi gửi — giảm kích thước URL
+function trimPayload(payload) {
+  const out = {};
+  for (const [k, v] of Object.entries(payload)) {
+    if (v !== null && v !== undefined && v !== "") out[k] = v;
+  }
+  return out;
+}
+
 async function apiPost(payload) {
-  // GAS KHÔNG xử lý CORS preflight (OPTIONS) — giới hạn cứng của nền tảng.
-  // Mọi header tùy chỉnh hoặc Content-Type khác "text/plain" đều trigger preflight → bị block.
-  // Giải pháp dứt điểm: dùng no-cors mode + encode data vào URL param (GET).
-  // GAS nhận qua doGet(e) → e.parameter.data
-  // Nhược điểm: không đọc được response body → dùng "fire-and-forget" + xác nhận qua GET sau.
-  
-  // Encode payload vào URL để gửi qua GET (tránh preflight hoàn toàn)
-  const url = new URL(API_URL);
-  url.searchParams.set("action", "save");
-  url.searchParams.set("data", JSON.stringify(payload));
-  
-  const res = await fetch(url.toString(), { method: "GET" });
-  const text = await res.text();
-  if (!text || !text.trim()) throw new Error("Server không trả về dữ liệu");
-  let data = null;
-  try { data = JSON.parse(text); } catch { throw new Error("API trả về dữ liệu không hợp lệ: " + text.slice(0, 100)); }
-  if (!data?.success) throw new Error(data?.error || ("Lỗi " + res.status));
-  return data;
+  // Chiến lược: thử POST text/plain trước (không trigger preflight, không bị giới hạn URL)
+  // Nếu POST bị CORS block → fallback về GET với data chunk nhỏ
+  const jsonBody = JSON.stringify(trimPayload(payload));
+  console.log("[apiPost] payload size:", jsonBody.length, "chars | buoc:", payload.buoc, "| ma:", payload.ma_phieu);
+
+  try {
+    const res = await fetch(API_URL, {
+      method: "POST",
+      body:   jsonBody,
+      // KHÔNG set Content-Type header → browser gửi text/plain → không trigger preflight
+    });
+    const text = await res.text();
+    console.log("[apiPost] POST response:", text?.slice(0, 200));
+    if (!text?.trim()) throw new Error("Server không trả về dữ liệu");
+    const data = JSON.parse(text);
+    if (!data?.success) throw new Error(data?.error || "Server trả về lỗi");
+    console.log("[apiPost] POST success:", data);
+    return data;
+  } catch (postErr) {
+    // POST thất bại (CORS hoặc lỗi khác) → fallback GET
+    console.warn("[apiPost] POST failed:", postErr.message, "— thử GET fallback");
+    const url = new URL(API_URL);
+    url.searchParams.set("action", "save");
+    url.searchParams.set("data", jsonBody);
+    const urlStr = url.toString();
+    console.log("[apiPost] GET URL length:", urlStr.length);
+    if (urlStr.length > 7500) throw new Error("Payload quá lớn cho GET (" + urlStr.length + " ký tự). Lỗi POST: " + postErr.message);
+    const res2 = await fetch(urlStr, { method: "GET" });
+    const text2 = await res2.text();
+    console.log("[apiPost] GET response:", text2?.slice(0, 200));
+    if (!text2?.trim()) throw new Error("Server không trả về dữ liệu (GET fallback)");
+    const data2 = JSON.parse(text2);
+    if (!data2?.success) throw new Error(data2?.error || "Server lỗi (GET)");
+    return data2;
+  }
 }
 
 // ── State ────────────────────────────────────────────────────
