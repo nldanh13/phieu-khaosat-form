@@ -511,7 +511,7 @@ function validateStep(n) {
 
   if (n === 1) {
     if (!get("f_ten"))          errors.push("Họ và tên bệnh nhân");
-    if (!get("f_hoSo"))         errors.push("Số hồ sơ bệnh án");
+    if (!get("f_hoSo"))         errors.push("Mã BN");
     if (!get("f_ngaySinh"))     errors.push("Ngày sinh");
     if (!get("f_gioi"))         errors.push("Giới tính");
     if (!get("f_ngayNhapVien")) errors.push("Ngày nhập viện");
@@ -628,7 +628,9 @@ async function loadDanhSach() {
   );
   try {
     const res = await apiGet("danh-sach");
+    console.log("[loadDanhSach] raw response:", JSON.stringify(res)?.slice(0, 300));
     danhSachCache = Array.isArray(res) ? res : (res.data || res.items || []);
+    console.log("[loadDanhSach] cache size:", danhSachCache.length, "| first ma_phieu:", danhSachCache[0]?.ma_phieu);
     renderDashboard();
     hideAlert("dash-alert");
   } catch (e) {
@@ -674,7 +676,7 @@ function renderDashboard() {
         <div class="phieu-head">
           <div>
             <div class="phieu-name">${escapeHtml(record.ho_ten || "(Chưa có tên bệnh nhân)")}</div>
-            <div class="phieu-sub">Mã phiếu: ${escapeHtml(record.ma_phieu || "")} · ${record.so_ho_so ? "HSBA: " + escapeHtml(record.so_ho_so) + " · " : ""}${record.updated_at ? "Cập nhật: " + escapeHtml(formatWhen(record.updated_at)) : "Chưa có thời gian"}</div>
+            <div class="phieu-sub">Mã phiếu: ${escapeHtml(record.ma_phieu || "")} · ${record.so_ho_so ? "Mã BN: " + escapeHtml(record.so_ho_so) + " · " : ""}${record.updated_at ? "Cập nhật: " + escapeHtml(formatWhen(record.updated_at)) : "Chưa có thời gian"}</div>
           </div>
           <div class="phieu-actions">
             <button class="btn btn-sm btn-primary" onclick="openRecordByMa('${escapeHtml(record.ma_phieu)}')">${actionText}</button>
@@ -1001,7 +1003,7 @@ function buildStep1() {
     <div class="card-title">A1. Thông tin hành chính</div>
     <div class="form-row">
       <div class="form-group"><label>Họ và tên bệnh nhân <span class="req">*</span></label><input id="f_ten" placeholder="Nguyễn Văn A"></div>
-      <div class="form-group"><label>Số hồ sơ bệnh án <span class="req">*</span></label><input id="f_hoSo" placeholder="HS-2024-001"></div>
+      <div class="form-group"><label>Mã BN <span class="req">*</span></label><input id="f_hoSo" placeholder="BN-2024-001"></div>
     </div>
     <div class="form-row">
       <div class="form-group"><label>Ngày sinh <span class="req">*</span></label><input type="date" id="f_ngaySinh"></div>
