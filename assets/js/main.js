@@ -628,7 +628,7 @@ async function loadDanhSach() {
   );
   try {
     const res = await apiGet("danh-sach");
-    danhSachCache = Array.isArray(res) ? res : (res.items || []);
+    danhSachCache = Array.isArray(res) ? res : (res.data || res.items || []);
     renderDashboard();
     hideAlert("dash-alert");
   } catch (e) {
@@ -987,13 +987,7 @@ function collectStep(n) {
     kha_nang_vd:   getText("f_khanangVD"),
     bien_chung:    getText("f_bienChung"),
     tg_nam_vien:   getNum("f_tgNamVien"),
-    // C3. Thuốc giảm đau
-    thuoc_nhom:     getText("f_thuocNhom"),
-    thuoc_ten:      getText("f_thuocTen"),
-    thuoc_duong:    getText("f_thuocDuong"),
-    thuoc_lieu:     getText("f_thuocLieu"),
-    thuoc_hieu_qua: getText("f_thuocHieuQua"),
-    thuoc_tdp:      getText("f_thuocTDP"),
+
     hl_0: radio("hl_0"), hl_1: radio("hl_1"), hl_2: radio("hl_2"),
     hl_3: radio("hl_3"), hl_4: radio("hl_4"),
     nhan_xet:      getText("f_nhanXet"),
