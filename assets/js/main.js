@@ -403,7 +403,7 @@ const STEP2_FIELDS = new Set([
   "psqi1","psqi2","psqi3","psqi4","psqi5a","psqi6",
   "psqi_5_0","psqi_5_1","psqi_5_2","psqi_5_3","psqi_5_4",
   "psqi_5_5","psqi_5_6","psqi_5_7","psqi_5_8",
-  "psqi7","psqi8","psqi9"
+  "psqi7","psqi8","psqi9","psqi5j_text"
 ]);
 const STEP3_FIELDS = new Set([
   "ngay_pt_thuc","tg_pt","pp_pt_thuc","vo_cam_thuc","mat_mau","truyen_mau",
@@ -808,6 +808,7 @@ const FIELD_ID_MAP = {
   vas_nhap_vien: "f_vasNhap",
   psqi1: "f_psqi1", psqi2: "f_psqi2", psqi3: "f_psqi3", psqi4: "f_psqi4",
   psqi5a: "f_psqi5a", psqi6: "f_psqi6", psqi7: "f_psqi7", psqi8: "f_psqi8", psqi9: "f_psqi9",
+  psqi5j_text: "f_psqi5j_text",
   ngay_pt_thuc: "f_ngayPTthuc", tg_pt: "f_tgPT", pp_pt_thuc: "f_ppPTthuc",
   vo_cam_thuc: "f_voCamThuc", mat_mau: "f_matMau", truyen_mau: "f_truyenMau",
   vas1: "f_vas1", vas2: "f_vas2", vas3: "f_vas3",
@@ -964,6 +965,7 @@ function collectStep(n) {
     d.psqi8  = getNum("f_psqi8");
     d.psqi9  = getNum("f_psqi9");
     for (let i = 0; i < 9; i++) d[`psqi_5_${i}`] = radio(`psqi_5_${i}`);
+    d.psqi5j_text = getText("f_psqi5j_text");
     return d;
   }
 
@@ -1089,6 +1091,7 @@ function buildStep2() {
         <div class="opt-row">
           ${psqi5Labels.map((lbl,v) => `<label class="opt-chip" onclick="selectChip(this)"><input type="radio" name="psqi_5_${i}" value="${v}" onchange="calcPSQI()"><span>${lbl}</span></label>`).join("")}
         </div>
+        ${i === 8 ? `<div style="margin-top:8px"><input type="text" id="f_psqi5j_text" placeholder="Mô tả lý do khác..." style="width:100%;font-size:12px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);box-sizing:border-box;"></div>` : ""}
       </div>`).join("");
 
   document.getElementById("step2").innerHTML = `
