@@ -408,8 +408,9 @@ const STEP2_FIELDS = new Set([
 const STEP3_FIELDS = new Set([
   "ngay_pt_thuc","tg_pt","pp_pt_thuc","vo_cam_thuc","mat_mau","truyen_mau",
   "vas1","vas2","vas3","van_dong","kha_nang_vd","bien_chung","tg_nam_vien",
-  "thuoc_nhom","thuoc_ten","thuoc_duong","thuoc_lieu","thuoc_hieu_qua","thuoc_tdp",
-  "thuoc_ngay1","thuoc_ngay2","thuoc_ngay3",
+  "thuoc_nhom1","thuoc_lieu1","thuoc_hq1","thuoc_tdp1",
+  "thuoc_nhom2","thuoc_lieu2","thuoc_hq2","thuoc_tdp2",
+  "thuoc_nhom3","thuoc_lieu3","thuoc_hq3","thuoc_tdp3",
   "hl_0","hl_1","hl_2","hl_3","hl_4","nhan_xet"
 ]);
 
@@ -812,9 +813,9 @@ const FIELD_ID_MAP = {
   vas1: "f_vas1", vas2: "f_vas2", vas3: "f_vas3",
   van_dong: "f_vanDong", kha_nang_vd: "f_khanangVD", bien_chung: "f_bienChung",
   tg_nam_vien: "f_tgNamVien", nhan_xet: "f_nhanXet",
-  thuoc_nhom: "f_thuocNhom", thuoc_ten: "f_thuocTen", thuoc_duong: "f_thuocDuong",
-  thuoc_lieu: "f_thuocLieu", thuoc_hieu_qua: "f_thuocHieuQua", thuoc_tdp: "f_thuocTDP",
-  thuoc_ngay1: "f_thuocNgay1", thuoc_ngay2: "f_thuocNgay2", thuoc_ngay3: "f_thuocNgay3",
+  thuoc_nhom1: "f_thuocNhom1", thuoc_lieu1: "f_thuocLieu1", thuoc_hq1: "f_thuocHQ1", thuoc_tdp1: "f_thuocTDP1",
+  thuoc_nhom2: "f_thuocNhom2", thuoc_lieu2: "f_thuocLieu2", thuoc_hq2: "f_thuocHQ2", thuoc_tdp2: "f_thuocTDP2",
+  thuoc_nhom3: "f_thuocNhom3", thuoc_lieu3: "f_thuocLieu3", thuoc_hq3: "f_thuocHQ3", thuoc_tdp3: "f_thuocTDP3",
 };
 
 // [FIX-DATE] Google Sheets tự convert string thành Date object khi đọc lại:
@@ -977,9 +978,9 @@ function collectStep(n) {
     vas1:          getNum("f_vas1"),
     vas2:          getNum("f_vas2"),
     vas3:          getNum("f_vas3"),
-    thuoc_ngay1:   getText("f_thuocNgay1"),
-    thuoc_ngay2:   getText("f_thuocNgay2"),
-    thuoc_ngay3:   getText("f_thuocNgay3"),
+    thuoc_nhom1:   getText("f_thuocNhom1"), thuoc_lieu1: getText("f_thuocLieu1"), thuoc_hq1: getText("f_thuocHQ1"), thuoc_tdp1: getText("f_thuocTDP1"),
+    thuoc_nhom2:   getText("f_thuocNhom2"), thuoc_lieu2: getText("f_thuocLieu2"), thuoc_hq2: getText("f_thuocHQ2"), thuoc_tdp2: getText("f_thuocTDP2"),
+    thuoc_nhom3:   getText("f_thuocNhom3"), thuoc_lieu3: getText("f_thuocLieu3"), thuoc_hq3: getText("f_thuocHQ3"), thuoc_tdp3: getText("f_thuocTDP3"),
     van_dong:      getText("f_vanDong"),
     kha_nang_vd:   getText("f_khanangVD"),
     bien_chung:    getText("f_bienChung"),
@@ -1214,91 +1215,64 @@ function buildStep3() {
     </div>
   </div>
   <div class="card">
-    <div class="card-title">C2. Đau sau phẫu thuật (VAS ngày 1–3)</div>
+    <div class="card-title">C2. Đau & Thuốc giảm đau sau phẫu thuật (Ngày 1–3)</div>
     ${[1,2,3].map(d=>`
-    <div style="margin-bottom:16px">
-      <label style="font-size:12px;color:var(--text-muted)">Ngày ${d} sau mổ</label>
-      <div class="vas-wrap"><span style="font-size:11px;color:var(--text-muted);min-width:18px;">0</span><input type="range" min="0" max="10" step="1" id="f_vas${d}" value="0" oninput="document.getElementById(\'vasv${d}\').textContent=this.value"><span class="vas-num" id="vasv${d}">0</span><span style="font-size:11px;color:var(--text-muted);">10</span></div>
-      <div style="margin-top:6px;display:flex;align-items:center;gap:8px;">
-        <label style="font-size:12px;color:var(--text-muted);white-space:nowrap;">Sử dụng thuốc giảm đau:</label>
-        <select id="f_thuocNgay${d}" style="font-size:12px;padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);min-width:160px;">
-          <option value="">Chọn...</option>
-          <option value="Không dùng">Không dùng</option>
-          <option value="Paracetamol">Paracetamol</option>
-          <option value="NSAID">NSAID</option>
-          <option value="Opioid yếu">Opioid yếu (Tramadol...)</option>
-          <option value="Opioid mạnh">Opioid mạnh (Morphine...)</option>
-          <option value="Phối hợp">Phối hợp nhiều loại</option>
-        </select>
+    <div style="border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:14px;">
+      <div style="font-size:13px;font-weight:600;color:var(--primary);margin-bottom:10px;">Ngày ${d} sau mổ</div>
+
+      <div style="margin-bottom:10px;">
+        <label style="font-size:12px;color:var(--text-muted);">Điểm đau VAS</label>
+        <div class="vas-wrap"><span style="font-size:11px;color:var(--text-muted);min-width:18px;">0</span><input type="range" min="0" max="10" step="1" id="f_vas${d}" value="0" oninput="document.getElementById(\'vasv${d}\').textContent=this.value"><span class="vas-num" id="vasv${d}">0</span><span style="font-size:11px;color:var(--text-muted);">10</span></div>
+      </div>
+
+      <div class="form-row" style="margin-bottom:0">
+        <div class="form-group">
+          <label>Nhóm thuốc dùng</label>
+          <select id="f_thuocNhom${d}">
+            <option value="">Chọn...</option>
+            <option value="Không dùng">Không dùng</option>
+            <option value="Paracetamol">Paracetamol</option>
+            <option value="NSAID">NSAID (Ibuprofen, Diclofenac...)</option>
+            <option value="Opioid yếu">Opioid yếu (Tramadol, Codeine...)</option>
+            <option value="Opioid mạnh">Opioid mạnh (Morphine, Fentanyl...)</option>
+            <option value="Phối hợp">Phối hợp nhiều nhóm</option>
+            <option value="Khác">Khác</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Liều lượng / đường dùng</label>
+          <input type="text" id="f_thuocLieu${d}" placeholder="VD: Paracetamol 1g TM x3/ngày">
+        </div>
+      </div>
+
+      <div class="form-row" style="margin-bottom:0;margin-top:8px;">
+        <div class="form-group">
+          <label>Hiệu quả giảm đau</label>
+          <select id="f_thuocHQ${d}">
+            <option value="">Chọn...</option>
+            <option value="Tốt">Tốt — giảm đau rõ rệt</option>
+            <option value="Trung bình">Trung bình — giảm một phần</option>
+            <option value="Kém">Kém — ít hoặc không giảm</option>
+            <option value="Không đánh giá được">Không đánh giá được</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Tác dụng phụ</label>
+          <select id="f_thuocTDP${d}">
+            <option value="">Chọn...</option>
+            <option value="Không có">Không có</option>
+            <option value="Buồn nôn / nôn">Buồn nôn / nôn</option>
+            <option value="Chóng mặt">Chóng mặt</option>
+            <option value="Táo bón">Táo bón</option>
+            <option value="Ngủ gà">Ngủ gà / buồn ngủ</option>
+            <option value="Ngứa">Ngứa</option>
+            <option value="Hạ huyết áp">Hạ huyết áp</option>
+            <option value="Khó thở">Khó thở</option>
+            <option value="Khác">Khác</option>
+          </select>
+        </div>
       </div>
     </div>`).join("")}
-  </div>
-  <div class="card">
-    <div class="card-title">C3. Thuốc giảm đau sau phẫu thuật</div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Nhóm thuốc <span class="req">*</span></label>
-        <select id="f_thuocNhom">
-          <option value="">Chọn...</option>
-          <option value="Paracetamol">Paracetamol</option>
-          <option value="NSAID">NSAID (Ibuprofen, Diclofenac...)</option>
-          <option value="Opioid yếu">Opioid yếu (Tramadol, Codeine...)</option>
-          <option value="Opioid mạnh">Opioid mạnh (Morphine, Fentanyl...)</option>
-          <option value="Phối hợp">Phối hợp nhiều nhóm</option>
-          <option value="Khác">Khác</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>Tên thuốc cụ thể</label>
-        <input type="text" id="f_thuocTen" placeholder="VD: Paracetamol 1g, Tramadol 50mg...">
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Đường dùng</label>
-        <select id="f_thuocDuong">
-          <option value="">Chọn...</option>
-          <option value="Uống">Uống</option>
-          <option value="Tiêm TM">Tiêm tĩnh mạch</option>
-          <option value="Tiêm bắp">Tiêm bắp</option>
-          <option value="Truyền TM">Truyền tĩnh mạch</option>
-          <option value="Đặt hậu môn">Đặt hậu môn</option>
-          <option value="Dán da">Dán da (patch)</option>
-          <option value="Phối hợp">Phối hợp nhiều đường</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>Liều lượng / tần suất</label>
-        <input type="text" id="f_thuocLieu" placeholder="VD: 1g x 3 lần/ngày">
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Hiệu quả giảm đau</label>
-        <select id="f_thuocHieuQua">
-          <option value="">Chọn...</option>
-          <option value="Tốt">Tốt — giảm đau rõ rệt</option>
-          <option value="Trung bình">Trung bình — giảm một phần</option>
-          <option value="Kém">Kém — ít hoặc không giảm</option>
-          <option value="Không đánh giá được">Không đánh giá được</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>Tác dụng phụ ghi nhận</label>
-        <select id="f_thuocTDP">
-          <option value="">Chọn...</option>
-          <option value="Không có">Không có</option>
-          <option value="Buồn nôn / nôn">Buồn nôn / nôn</option>
-          <option value="Chóng mặt">Chóng mặt</option>
-          <option value="Táo bón">Táo bón</option>
-          <option value="Ngủ gà">Ngủ gà / buồn ngủ</option>
-          <option value="Ngứa">Ngứa</option>
-          <option value="Hạ huyết áp">Hạ huyết áp</option>
-          <option value="Khó thở">Khó thở</option>
-          <option value="Khác">Khác</option>
-        </select>
-      </div>
-    </div>
   </div>
   <div class="card">
     <div class="card-title">C4. Vận động sớm & biến chứng</div>
