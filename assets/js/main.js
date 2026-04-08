@@ -409,6 +409,7 @@ const STEP3_FIELDS = new Set([
   "ngay_pt_thuc","tg_pt","pp_pt_thuc","vo_cam_thuc","mat_mau","truyen_mau",
   "vas1","vas2","vas3","van_dong","kha_nang_vd","bien_chung","tg_nam_vien",
   "thuoc_nhom","thuoc_ten","thuoc_duong","thuoc_lieu","thuoc_hieu_qua","thuoc_tdp",
+  "thuoc_ngay1","thuoc_ngay2","thuoc_ngay3",
   "hl_0","hl_1","hl_2","hl_3","hl_4","nhan_xet"
 ]);
 
@@ -813,6 +814,7 @@ const FIELD_ID_MAP = {
   tg_nam_vien: "f_tgNamVien", nhan_xet: "f_nhanXet",
   thuoc_nhom: "f_thuocNhom", thuoc_ten: "f_thuocTen", thuoc_duong: "f_thuocDuong",
   thuoc_lieu: "f_thuocLieu", thuoc_hieu_qua: "f_thuocHieuQua", thuoc_tdp: "f_thuocTDP",
+  thuoc_ngay1: "f_thuocNgay1", thuoc_ngay2: "f_thuocNgay2", thuoc_ngay3: "f_thuocNgay3",
 };
 
 // [FIX-DATE] Google Sheets tự convert string thành Date object khi đọc lại:
@@ -975,6 +977,9 @@ function collectStep(n) {
     vas1:          getNum("f_vas1"),
     vas2:          getNum("f_vas2"),
     vas3:          getNum("f_vas3"),
+    thuoc_ngay1:   getText("f_thuocNgay1"),
+    thuoc_ngay2:   getText("f_thuocNgay2"),
+    thuoc_ngay3:   getText("f_thuocNgay3"),
     van_dong:      getText("f_vanDong"),
     kha_nang_vd:   getText("f_khanangVD"),
     bien_chung:    getText("f_bienChung"),
@@ -1211,8 +1216,22 @@ function buildStep3() {
   <div class="card">
     <div class="card-title">C2. Đau sau phẫu thuật (VAS ngày 1–3)</div>
     ${[1,2,3].map(d=>`
-    <div style="margin-bottom:12px"><label style="font-size:12px;color:var(--text-muted)">Ngày ${d} sau mổ</label>
-    <div class="vas-wrap"><span style="font-size:11px;color:var(--text-muted);min-width:18px;">0</span><input type="range" min="0" max="10" step="1" id="f_vas${d}" value="0" oninput="document.getElementById('vasv${d}').textContent=this.value"><span class="vas-num" id="vasv${d}">0</span><span style="font-size:11px;color:var(--text-muted);">10</span></div></div>`).join("")}
+    <div style="margin-bottom:16px">
+      <label style="font-size:12px;color:var(--text-muted)">Ngày ${d} sau mổ</label>
+      <div class="vas-wrap"><span style="font-size:11px;color:var(--text-muted);min-width:18px;">0</span><input type="range" min="0" max="10" step="1" id="f_vas${d}" value="0" oninput="document.getElementById(\'vasv${d}\').textContent=this.value"><span class="vas-num" id="vasv${d}">0</span><span style="font-size:11px;color:var(--text-muted);">10</span></div>
+      <div style="margin-top:6px;display:flex;align-items:center;gap:8px;">
+        <label style="font-size:12px;color:var(--text-muted);white-space:nowrap;">Sử dụng thuốc giảm đau:</label>
+        <select id="f_thuocNgay${d}" style="font-size:12px;padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);min-width:160px;">
+          <option value="">Chọn...</option>
+          <option value="Không dùng">Không dùng</option>
+          <option value="Paracetamol">Paracetamol</option>
+          <option value="NSAID">NSAID</option>
+          <option value="Opioid yếu">Opioid yếu (Tramadol...)</option>
+          <option value="Opioid mạnh">Opioid mạnh (Morphine...)</option>
+          <option value="Phối hợp">Phối hợp nhiều loại</option>
+        </select>
+      </div>
+    </div>`).join("")}
   </div>
   <div class="card">
     <div class="card-title">C3. Thuốc giảm đau sau phẫu thuật</div>
