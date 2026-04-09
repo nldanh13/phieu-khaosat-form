@@ -760,8 +760,33 @@ function changePage(page) {
   renderDashboard();
 }
 
-function openRecordByMa(ma) {
+async function openRecordByMa(ma) {
   const record = getMergedRecordByMa(ma);
+
+  // Nếu không có local draft (phiếu của người khác hoặc chưa từng mở),
+  // fetch đầy đủ 3 bước từ server trước khi mở form
+  const hasLocal = Boolean(getLocalDraft(ma));
+  if (!hasLocal && !record.local_only) {
+    showAlert("dash-alert", `Đang tải phiếu ${ma}...`, "info");
+    try {
+      const res = await apiGet("get", { ma });
+      hideAlert("dash-alert");
+      const fullData = res?.data || res || {};
+      // Merge với record dashboard (bước 1) để không mất thông tin
+      const merged = { ...record, ...fullData };
+      showScreen("new", {
+        record: merged,
+        step:   Math.min(Math.max(merged.buoc || 1, 1), 3),
+        source: "remote",
+      });
+    } catch (e) {
+      hideAlert("dash-alert");
+      showAlert("dash-alert", `Không tải được dữ liệu phiếu (${e.message}). Thử lại hoặc kiểm tra mạng.`, "error");
+    }
+    return;
+  }
+
+  // Có local draft → mở bình thường
   showScreen("new", {
     record,
     step:   record.last_step || Math.min(record.buoc || 1, 3),
