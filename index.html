@@ -65,6 +65,17 @@
   <div id="screen-dash" class="screen">
     <div class="container">
       <div id="dash-alert" class="alert hidden"></div>
+
+      <!-- Khung thống kê toàn hệ thống — tất cả user đều thấy -->
+      <div class="tonghop-card" id="tonghop-card">
+        <div class="tonghop-header">
+          <span class="tonghop-title">📊 Thống kê toàn nghiên cứu</span>
+          <button class="btn btn-sm" onclick="loadTongHop()" title="Tải lại">↻</button>
+        </div>
+        <div id="tonghop-grid"><div class="tonghop-loading">Đang tải...</div></div>
+      </div>
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px;">Phiếu của tôi</div>
       <div class="stat-grid" id="stat-grid">
         <div class="stat-card"><div class="stat-num">—</div><div class="stat-lbl">Tổng phiếu</div></div>
         <div class="stat-card"><div class="stat-num">—</div><div class="stat-lbl">Phiếu mới</div></div>

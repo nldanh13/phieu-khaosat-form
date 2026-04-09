@@ -89,6 +89,7 @@ let currentHighestStep = 1;
 let currentMaPhieu     = null;
 let currentRecordSource = "new";
 let danhSachCache      = [];
+let tongHopCache       = null; // thống kê toàn hệ thống
 let dashboardFilter    = "all";
 let dashboardQuery     = "";
 let draftSaveTimer     = null;
@@ -440,6 +441,7 @@ async function nextStep()  {
   data.ma_phieu       = currentMaPhieu;
   data.buoc           = currentHighestStep;
   data.dieu_tra_vien  = currentUser?.name || "";
+  data.updated_by     = currentUser?.name || "";
   apiPost(data).then(() => {
     markLocalSynced();
     updateFooterStatus(`Đã lưu hệ thống lúc ${formatWhen(new Date().toISOString())}`);
@@ -467,6 +469,7 @@ async function finishForm() {
     const data = { ...(existingDraft.data || {}), ...step3Data, ma_phieu: currentMaPhieu };
     data.buoc     = 3;
     data.dieu_tra_vien = currentUser?.name || "";
+    data.updated_by    = currentUser?.name || "";
     await apiPost(data);
     // Lưu draft với toàn bộ data đã merge
     upsertLocalDraft({
@@ -507,7 +510,7 @@ async function finishForm() {
 const STEP1_FIELDS = new Set([
   "ho_ten","so_ho_so","ngay_sinh","gioi_tinh","nghe_nghiep","dia_chi","hoc_van","dan_toc",
   "ngay_nhap_vien","ngay_pt_du_kien","can_nang","chieu_cao","bmi",
-  "chan_doan","loai_pt","vung_pt","pp_pt","vo_cam","vas_nhap_vien","dieu_tra_vien"
+  "chan_doan","loai_pt","vung_pt","pp_pt","vo_cam","vas_nhap_vien","dieu_tra_vien","updated_by"
 ]);
 const STEP2_FIELDS = new Set([
   "hads_1","hads_2","hads_3","hads_4","hads_5","hads_6","hads_7",
@@ -577,7 +580,7 @@ async function saveAllStepsUpdate() {
 
     // Gửi song song chỉ những bước có thay đổi
     const tasks = [...changedSteps].map(buoc =>
-      apiPost({ ...newData, buoc, dieu_tra_vien: dtv })
+      apiPost({ ...newData, buoc, dieu_tra_vien: dtv, updated_by: dtv })
         .then(() => ({ buoc, ok: true }))
         .catch(e => ({ buoc, ok: false, err: e.message }))
     );
@@ -664,6 +667,7 @@ async function saveCurrentStep() {
     data.ma_phieu = currentMaPhieu;
     data.buoc     = Math.max(Number(currentHighestStep || 0), Number(currentStep || 0), 1);
     data.dieu_tra_vien = currentUser?.name || "";
+    data.updated_by    = currentUser?.name || "";
     await apiPost(data);
     currentHighestStep = Math.max(Number(currentHighestStep || 0), Number(currentStep || 0), 1);
     markLocalSynced();
@@ -749,6 +753,7 @@ async function loadDanhSach() {
     console.log("[loadDanhSach] cache size:", danhSachCache.length, "| first ma_phieu:", danhSachCache[0]?.ma_phieu);
     renderDashboard();
     hideAlert("dash-alert");
+    loadTongHop(); // cập nhật thống kê toàn hệ thống
   } catch (e) {
     danhSachCache = Array.isArray(danhSachCache) ? danhSachCache : [];
     renderDashboard();
@@ -757,6 +762,79 @@ async function loadDanhSach() {
       "error"
     );
   }
+}
+
+async function loadTongHop() {
+  try {
+    const res = await apiGet("tong-hop");
+    tongHopCache = res;
+  } catch (e) {
+    tongHopCache = null; // network lỗi → ẩn khung đi, không crash
+  }
+  renderTongHop();
+}
+
+function renderTongHop() {
+  const el = document.getElementById("tonghop-grid");
+  if (!el) return;
+  const d = tongHopCache;
+  if (!d) {
+    el.innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:8px 0;">Không tải được dữ liệu thống kê.</div>';
+    return;
+  }
+
+  // Thanh tiến độ % hoàn thành
+  const pct = d.tong > 0 ? Math.round(d.hoan_thanh / d.tong * 100) : 0;
+
+  // Bảng theo điều tra viên
+  const dtvRows = (d.theo_dtv || []).map(dtv => {
+    const p = dtv.tong > 0 ? Math.round(dtv.hoan_thanh / dtv.tong * 100) : 0;
+    return `<tr>
+      <td style="padding:5px 8px;">${escapeHtml(dtv.ten)}</td>
+      <td style="padding:5px 8px;text-align:center;">${dtv.tong}</td>
+      <td style="padding:5px 8px;text-align:center;">${dtv.hoan_thanh}</td>
+      <td style="padding:5px 8px;">
+        <div style="display:flex;align-items:center;gap:6px;">
+          <div style="flex:1;background:var(--border);border-radius:4px;height:6px;overflow:hidden;">
+            <div style="width:${p}%;background:var(--primary);height:6px;border-radius:4px;transition:width .4s;"></div>
+          </div>
+          <span style="font-size:11px;color:var(--text-muted);min-width:30px;">${p}%</span>
+        </div>
+      </td>
+    </tr>`;
+  }).join("");
+
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;">
+      <div class="stat-card" style="border-color:var(--primary);"><div class="stat-num">${d.tong}</div><div class="stat-lbl">Tổng toàn bộ</div></div>
+      <div class="stat-card"><div class="stat-num" style="color:var(--green)">${d.hoan_thanh}</div><div class="stat-lbl">Hoàn thành</div></div>
+      <div class="stat-card"><div class="stat-num" style="color:var(--amber)">${d.dang_dien}</div><div class="stat-lbl">Đang điền</div></div>
+      <div class="stat-card"><div class="stat-num" style="color:var(--text-muted)">${d.moi}</div><div class="stat-lbl">Chưa điền</div></div>
+    </div>
+    <div style="margin-bottom:10px;">
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);margin-bottom:4px;">
+        <span>Tiến độ hoàn thành</span><span>${pct}%</span>
+      </div>
+      <div style="background:var(--border);border-radius:6px;height:8px;overflow:hidden;">
+        <div style="width:${pct}%;background:var(--primary);height:8px;border-radius:6px;transition:width .6s;"></div>
+      </div>
+    </div>
+    ${dtvRows ? `
+    <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px;">Theo điều tra viên</div>
+    <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <thead>
+          <tr style="background:var(--surface-raised,#f5f5f5);">
+            <th style="padding:5px 8px;text-align:left;font-weight:600;">Điều tra viên</th>
+            <th style="padding:5px 8px;text-align:center;font-weight:600;">Tổng</th>
+            <th style="padding:5px 8px;text-align:center;font-weight:600;">Hoàn thành</th>
+            <th style="padding:5px 8px;text-align:left;font-weight:600;">Tiến độ</th>
+          </tr>
+        </thead>
+        <tbody>${dtvRows}</tbody>
+      </table>
+    </div>` : ""}
+  `;
 }
 
 function renderDashboard() {
@@ -806,6 +884,7 @@ function renderDashboard() {
           <span class="badge ${status.cls}">${escapeHtml(status.text)}</span>
           <span class="badge badge-blue">${escapeHtml(getStepLabel(record))}</span>
           ${dtv ? `<span class="badge badge-gray">👤 ${escapeHtml(dtv)}</span>` : ""}
+          ${record.updated_by && record.updated_by !== dtv ? `<span class="badge badge-blue" title="Người sửa gần nhất">✏️ ${escapeHtml(record.updated_by)}</span>` : ""}
           ${record.gioi_tinh ? `<span class="badge badge-gray">${escapeHtml(record.gioi_tinh)}</span>` : ""}
           ${record.loai_pt  ? `<span class="badge badge-amber">${escapeHtml(record.loai_pt)}</span>` : ""}
           ${record.local_only ? `<span class="badge badge-gray">Chưa gửi lên hệ thống</span>` : ""}
