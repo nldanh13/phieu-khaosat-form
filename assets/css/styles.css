@@ -436,3 +436,13 @@ body{font-family:'Be Vietnam Pro',system-ui,sans-serif;font-size:14px;line-heigh
   color: #fff;
   border-color: transparent;
 }
+
+/* ── Nút nguy hiểm (xóa) ── */
+.btn-danger {
+  background: var(--red, #e53e3e);
+  color: #fff;
+  border-color: transparent;
+}
+.btn-danger:hover {
+  background: #c53030;
+}

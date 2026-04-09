@@ -13,6 +13,7 @@
 
 window.APP_AUTH = {
   users: {
+    "admin":   { pass: "admin123", role: "admin",  name: "admin"   },
     "nldanh":  { pass: "123", role: "nldanh",  name: "nldanh"  },
     "tqson":   { pass: "123", role: "tqson",   name: "tqson"   },
     "vtynhi":  { pass: "123", role: "vtynhi",  name: "vtynhi"  },

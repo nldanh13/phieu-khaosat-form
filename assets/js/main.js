@@ -631,7 +631,9 @@ async function loadDanhSach() {
     "info"
   );
   try {
-    const res = await apiGet("danh-sach");
+    // admin truyền user="all" để lấy toàn bộ, user thường truyền tên mình
+    const userParam = currentUser?.role === "admin" ? "all" : (currentUser?.name || "");
+    const res = await apiGet("danh-sach", { user: userParam });
     console.log("[loadDanhSach] raw response:", JSON.stringify(res)?.slice(0, 300));
     danhSachCache = Array.isArray(res) ? res : (res.data || res.items || []);
     console.log("[loadDanhSach] cache size:", danhSachCache.length, "| first ma_phieu:", danhSachCache[0]?.ma_phieu);
@@ -672,9 +674,11 @@ function renderDashboard() {
     <div class="stat-card"><div class="stat-num">${records.filter(r => (r.buoc || 0) >= 3).length}</div><div class="stat-lbl">Hoàn thành</div></div>
   `;
 
+  const isAdmin = currentUser?.role === "admin";
   const cards = pageRecords.map(record => {
     const status     = getRecordStatus(record);
     const actionText = (record.buoc || 0) >= 3 ? "Cập nhật" : "Tiếp tục";
+    const dtv        = record.dieu_tra_vien || record.user || "";
     return `
       <div class="phieu-item">
         <div class="phieu-head">
@@ -685,11 +689,13 @@ function renderDashboard() {
           <div class="phieu-actions">
             <button class="btn btn-sm btn-primary" onclick="openRecordByMa('${escapeHtml(record.ma_phieu)}')">${actionText}</button>
             ${record.has_local ? `<button class="btn btn-sm" onclick="deleteLocalDraftOnly('${escapeHtml(record.ma_phieu)}')">Xóa nháp máy</button>` : ""}
+            ${isAdmin ? `<button class="btn btn-sm btn-danger" onclick="deleteRecord('${escapeHtml(record.ma_phieu)}')">🗑 Xóa</button>` : ""}
           </div>
         </div>
         <div class="phieu-meta">
           <span class="badge ${status.cls}">${escapeHtml(status.text)}</span>
           <span class="badge badge-blue">${escapeHtml(getStepLabel(record))}</span>
+          ${dtv ? `<span class="badge badge-gray">👤 ${escapeHtml(dtv)}</span>` : ""}
           ${record.gioi_tinh ? `<span class="badge badge-gray">${escapeHtml(record.gioi_tinh)}</span>` : ""}
           ${record.loai_pt  ? `<span class="badge badge-amber">${escapeHtml(record.loai_pt)}</span>` : ""}
           ${record.local_only ? `<span class="badge badge-gray">Chưa gửi lên hệ thống</span>` : ""}
@@ -761,6 +767,34 @@ function deleteLocalDraftOnly(ma) {
   if (!confirm(`Xóa nháp trên máy của phiếu ${ma}?`)) return;
   removeLocalDraft(ma);
   renderDashboard();
+}
+
+// Xóa phiếu hoàn toàn (admin only) — local + server
+async function deleteRecord(ma) {
+  if (!confirm(`Xóa hoàn toàn phiếu ${ma}?\n\nHành động này không thể hoàn tác — phiếu sẽ bị xóa khỏi Google Sheets.`)) return;
+  // Xóa local draft ngay
+  removeLocalDraft(ma);
+  // Cập nhật cache ngay để UI phản hồi nhanh
+  danhSachCache = danhSachCache.filter(r => r.ma_phieu !== ma);
+  renderDashboard();
+  // Gọi API xóa server
+  try {
+    showAlert("dash-alert", `Đang xóa phiếu ${ma} trên server...`, "info");
+    const url = new URL(API_URL);
+    url.searchParams.set("action", "delete");
+    url.searchParams.set("ma_phieu", ma);
+    url.searchParams.set("dieu_tra_vien", currentUser?.name || "");
+    const res  = await fetch(url.toString());
+    const text = await res.text();
+    const data = JSON.parse(text);
+    if (data?.success) {
+      showAlert("dash-alert", `✓ Đã xóa phiếu ${ma} khỏi Google Sheets.`, "success");
+    } else {
+      showAlert("dash-alert", `Xóa local thành công nhưng server báo lỗi: ${data?.error || "không rõ"}. Kiểm tra GAS.`, "error");
+    }
+  } catch (e) {
+    showAlert("dash-alert", `Đã xóa local. Không kết nối được server để xóa trên Sheets (${e.message}).`, "error");
+  }
 }
 
 // ── Mode banner / footer ─────────────────────────────────────
@@ -1080,25 +1114,38 @@ function addThuocRow(ngay) {
   const list = document.getElementById(`thuoc_list_d${ngay}`);
   if (!list) return;
   const currentRows = list.querySelectorAll(".thuoc-row").length;
-  if (MAX_THUOC_PER_NGAY > 0 && currentRows >= MAX_THUOC_PER_NGAY) {
-    alert(`Tối đa ${MAX_THUOC_PER_NGAY} thuốc mỗi ngày.`);
-    return;
-  }
   list.insertAdjacentHTML("beforeend", renderThuocRow(ngay, currentRows));
 }
 
-// Xóa hàng thuốc (re-index lại)
+// Xóa hàng thuốc
 function removeThuocRow(ngay, idx) {
   const list = document.getElementById(`thuoc_list_d${ngay}`);
   if (!list) return;
   const rows = list.querySelectorAll(".thuoc-row");
   if (rows.length <= 1) return; // luôn giữ ít nhất 1 hàng
-  // Collect data trước khi xóa
-  const allData = collectThuocNgayRaw(ngay);
-  allData.splice(idx, 1);
-  // Re-render
-  list.innerHTML = allData.map((d, i) => renderThuocRow(ngay, i, d)).join("");
-  updateAddThuocBtn(ngay);
+
+  // Xóa đúng hàng theo data-idx
+  const target = [...rows].find(r => Number(r.dataset.idx) === idx);
+  if (!target) return;
+  target.remove();
+
+  // Re-index các hàng còn lại
+  list.querySelectorAll(".thuoc-row").forEach((row, i) => {
+    const oldNgay = row.dataset.ngay;
+    const oldIdx  = row.dataset.idx;
+    row.dataset.idx = i;
+    row.id = `thuoc_d${ngay}_r${i}`;
+
+    // Đổi id từng field: nhom, lieu, hq, tdp
+    ["nhom","lieu","hq","tdp"].forEach(f => {
+      const el = row.querySelector(`#thuoc_d${oldNgay}_r${oldIdx}_${f}`);
+      if (el) el.id = `thuoc_d${ngay}_r${i}_${f}`;
+    });
+
+    // Cập nhật onclick nút xóa (hàng đầu không có nút xóa)
+    const btn = row.querySelector(".btn-remove-thuoc");
+    if (btn) btn.setAttribute("onclick", `removeThuocRow(${ngay},${i})`);
+  });
 }
 
 // updateAddThuocBtn: không dùng (không giới hạn), giữ lại để tránh lỗi nếu gọi
