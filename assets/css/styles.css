@@ -446,3 +446,78 @@ body{font-family:'Be Vietnam Pro',system-ui,sans-serif;font-size:14px;line-heigh
 .btn-danger:hover {
   background: #c53030;
 }
+
+/* ── Avatar & dropdown đăng xuất ── */
+.avatar-btn {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: var(--primary);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+}
+.avatar-btn:hover { opacity: 0.85; }
+.avatar-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 180px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.10);
+  z-index: 200;
+}
+.avatar-menu-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.avatar-menu-role {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.avatar-menu-logout {
+  width: 100%;
+  padding: 7px 0;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--red, #e53e3e);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.avatar-menu-logout:hover {
+  background: var(--red, #e53e3e);
+  color: #fff;
+  border-color: transparent;
+}
+
+/* ── Badge mới ── */
+.badge-gray { background: #f1efe8; color: #5f5e5a; }
+
+/* ── Cảnh báo hết phiên ── */
+#idle-warning {
+  display: none;
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--amber, #ba7517);
+  color: #fff;
+  padding: 10px 20px;
+  border-radius: 10px;
+  font-size: 13px;
+  align-items: center;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+  z-index: 9999;
+  white-space: nowrap;
+}

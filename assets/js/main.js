@@ -98,6 +98,62 @@ const PAGE_SIZE        = 20;
 const LOCAL_DRAFT_KEY = "phieu_local_drafts_v3";
 
 // ── Auth ─────────────────────────────────────────────────────
+const SESSION_KEY = "phieu_session_v1";
+
+function saveSession(user) {
+  localStorage.setItem(SESSION_KEY, JSON.stringify({ username: user.username, ts: Date.now() }));
+}
+
+function loadSession() {
+  try {
+    const s = JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
+    if (!s?.username || !USERS[s.username]) return null;
+    return { username: s.username, ...USERS[s.username] };
+  } catch { return null; }
+}
+
+function clearSession() {
+  localStorage.removeItem(SESSION_KEY);
+}
+
+function updateAvatar(user) {
+  const wrap = document.getElementById("avatar-wrap");
+  const btn  = document.getElementById("avatar-btn");
+  const ini  = document.getElementById("avatar-initials");
+  const nm   = document.getElementById("avatar-menu-name");
+  const rl   = document.getElementById("avatar-menu-role");
+  if (!wrap) return;
+  if (user) {
+    const initials = (user.name || user.username || "?").slice(0, 2).toUpperCase();
+    ini.textContent = initials;
+    nm.textContent  = user.name || user.username;
+    rl.textContent  = user.role === "admin" ? "Quản trị viên" : "Điều tra viên";
+    wrap.style.display = "block";
+    // Màu avatar khác nhau theo role
+    btn.style.background = user.role === "admin" ? "var(--primary)" : "var(--teal-600,#0f6e56)";
+  } else {
+    wrap.style.display = "none";
+  }
+}
+
+function toggleAvatarMenu() {
+  const menu = document.getElementById("avatar-menu");
+  if (!menu) return;
+  const isOpen = menu.style.display === "block";
+  menu.style.display = isOpen ? "none" : "block";
+  // Đóng khi click ra ngoài
+  if (!isOpen) {
+    setTimeout(() => {
+      document.addEventListener("click", function closeMenu(e) {
+        if (!document.getElementById("avatar-wrap")?.contains(e.target)) {
+          menu.style.display = "none";
+          document.removeEventListener("click", closeMenu);
+        }
+      });
+    }, 0);
+  }
+}
+
 function doLogin() {
   const u  = document.getElementById("inp-user").value.trim();
   const p  = document.getElementById("inp-pass").value;
@@ -109,8 +165,53 @@ function doLogin() {
   }
   currentUser = { username: u, ...USERS[u] };
   el.classList.add("hidden");
+  saveSession(currentUser);
+  updateAvatar(currentUser);
+  resetIdleTimer();
   showScreen("dash");
   loadDanhSach();
+}
+
+function doLogout(silent = false) {
+  if (!silent && !confirm("Đăng xuất khỏi tài khoản " + (currentUser?.name || "") + "?")) return;
+  // Lưu draft đang điền trước khi đăng xuất (nếu đang ở form)
+  if (document.getElementById("screen-new")?.classList.contains("active")) {
+    saveLocalProgress(false);
+  }
+  stopIdleTimer();
+  clearSession();
+  currentUser = null;
+  updateAvatar(null);
+  const menu = document.getElementById("avatar-menu");
+  if (menu) menu.style.display = "none";
+  document.getElementById("inp-user").value = "";
+  document.getElementById("inp-pass").value = "";
+  document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
+  document.getElementById("screen-login").classList.add("active");
+  document.getElementById("btn-dash").style.display    = "none";
+  document.getElementById("btn-new-top").style.display = "none";
+}
+
+// ── Idle timeout (4 giờ không thao tác → đăng xuất im lặng) ─
+const IDLE_TIMEOUT_MS  = 4 * 60 * 60 * 1000; // 4 giờ
+let idleTimer          = null;
+
+function resetIdleTimer() {
+  if (!currentUser) return;
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => {
+    doLogout(true);
+  }, IDLE_TIMEOUT_MS);
+}
+
+function stopIdleTimer() {
+  clearTimeout(idleTimer);
+}
+
+function bindIdleEvents() {
+  ["mousemove","mousedown","keydown","touchstart","scroll","click"].forEach(ev => {
+    document.addEventListener(ev, () => { if (currentUser) resetIdleTimer(); }, { passive: true });
+  });
 }
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -211,16 +312,18 @@ function getManagedRecords() {
   );
 }
 
-// [FIX#8] Thống nhất logic trạng thái:
-// - Phiếu chỉ coi là "Hoàn thành" khi buoc >= 3 VÀ đã sync lên server
-// - "Chưa đồng bộ" = có remote nhưng local chưa sync
-// - "Nháp trên máy" = chưa bao giờ lên server
-// - "Đang điền" = có trên server nhưng buoc < 3
+// Trạng thái phiếu:
+// - "Hoàn thành" = đã lưu đủ 3 bước (buoc >= 3) và đã sync lên server
+// - "Phiếu mới"  = chưa điền trường nào (buoc = 0 hoặc 1 và chỉ là nháp chưa gửi)
+// - "Nháp máy"   = local_only (chưa bao giờ lên server)
+// - "Chưa đồng bộ" = có thay đổi chưa sync
+// - "Đang điền"  = còn lại (đã có trên server nhưng chưa đủ 3 bước)
 function getRecordStatus(record) {
-  if (record.local_only)                           return { text: "Nháp trên máy",  cls: "badge-purple" };
-  if (record.has_local && !record.synced)          return { text: "Chưa đồng bộ",   cls: "badge-purple" };
-  if ((record.buoc || 0) >= 3 && record.synced)   return { text: "Hoàn thành",     cls: "badge-green"  };
-  if ((record.buoc || 0) >= 3 && !record.has_local) return { text: "Hoàn thành",   cls: "badge-green"  };
+  if (record.local_only && (record.buoc || 0) <= 1) return { text: "Phiếu mới",      cls: "badge-gray"   };
+  if (record.local_only)                            return { text: "Nháp trên máy",   cls: "badge-purple" };
+  if (record.has_local && !record.synced)           return { text: "Chưa đồng bộ",    cls: "badge-purple" };
+  if ((record.buoc || 0) >= 3)                      return { text: "Hoàn thành",      cls: "badge-green"  };
+  if ((record.buoc || 0) <= 1 && !record.has_local) return { text: "Phiếu mới",      cls: "badge-gray"   };
   return { text: "Đang điền", cls: "badge-amber" };
 }
 
@@ -675,9 +778,9 @@ function renderDashboard() {
 
   document.getElementById("stat-grid").innerHTML = `
     <div class="stat-card"><div class="stat-num">${records.length}</div><div class="stat-lbl">Tổng phiếu quản lý</div></div>
-    <div class="stat-card"><div class="stat-num">${records.filter(r => r.local_only).length}</div><div class="stat-lbl">Nháp trên máy</div></div>
-    <div class="stat-card"><div class="stat-num">${records.filter(r => !r.local_only && (r.buoc || 0) < 3).length}</div><div class="stat-lbl">Đang điền</div></div>
-    <div class="stat-card"><div class="stat-num">${records.filter(r => (r.buoc || 0) >= 3).length}</div><div class="stat-lbl">Hoàn thành</div></div>
+    <div class="stat-card"><div class="stat-num">${records.filter(r => getRecordStatus(r).text === "Phiếu mới").length}</div><div class="stat-lbl">Phiếu mới</div></div>
+    <div class="stat-card"><div class="stat-num">${records.filter(r => getRecordStatus(r).text === "Đang điền").length}</div><div class="stat-lbl">Đang điền</div></div>
+    <div class="stat-card"><div class="stat-num">${records.filter(r => getRecordStatus(r).text === "Hoàn thành").length}</div><div class="stat-lbl">Hoàn thành</div></div>
   `;
 
   const isAdmin = currentUser?.role === "admin";
@@ -1605,4 +1708,15 @@ document.addEventListener("DOMContentLoaded", () => {
   bindAutosave();
   document.getElementById("btn-dash")?.addEventListener("click", () => { showScreen("dash"); loadDanhSach(); });
   document.getElementById("btn-new-top")?.addEventListener("click", () => showScreen("new"));
+
+  // Khôi phục session đã lưu (lưu trạng thái đăng nhập trên thiết bị)
+  const saved = loadSession();
+  if (saved) {
+    currentUser = saved;
+    updateAvatar(currentUser);
+    resetIdleTimer();
+    showScreen("dash");
+    loadDanhSach();
+  }
+  bindIdleEvents();
 });

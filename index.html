@@ -21,9 +21,21 @@
       <div class="topbar-brand">Phiếu Thu Thập Số Liệu Nghiên Cứu</div>
       <div class="topbar-sub">Khoa Ngoại CTCH-TK — ĐH Y Dược Cần Thơ</div>
     </div>
-    <div class="btn-group">
+    <div style="display:flex;align-items:center;gap:8px;">
       <button class="btn btn-sm" id="btn-dash" style="display:none">← Dashboard</button>
       <button class="btn btn-sm btn-primary" id="btn-new-top" style="display:none">+ Phiếu mới</button>
+      <!-- Avatar + dropdown đăng xuất -->
+      <div class="avatar-wrap" id="avatar-wrap" style="display:none;position:relative;">
+        <button class="avatar-btn" id="avatar-btn" onclick="toggleAvatarMenu()" title="Thông tin tài khoản">
+          <span id="avatar-initials">?</span>
+        </button>
+        <div class="avatar-menu" id="avatar-menu" style="display:none;">
+          <div class="avatar-menu-name" id="avatar-menu-name">—</div>
+          <div class="avatar-menu-role" id="avatar-menu-role">—</div>
+          <hr style="margin:8px 0;border:none;border-top:1px solid var(--border);">
+          <button class="avatar-menu-logout" onclick="doLogout()">Đăng xuất</button>
+        </div>
+      </div>
     </div>
   </div>
 
