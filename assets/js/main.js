@@ -757,7 +757,7 @@ async function loadDanhSach() {
     console.log("[loadDanhSach] cache size:", danhSachCache.length, "| first ma_phieu:", danhSachCache[0]?.ma_phieu);
     renderDashboard();
     hideAlert("dash-alert");
-    loadTongHop(); // cập nhật thống kê toàn hệ thống
+    tongHopCache = null; // reset để tab tổng quan tự tính lại từ data mới
   } catch (e) {
     danhSachCache = Array.isArray(danhSachCache) ? danhSachCache : [];
     renderDashboard();
@@ -775,14 +775,20 @@ function switchDashTab(tab) {
   document.getElementById("dash-tab-overall").classList.toggle("active", tab === "overall");
   document.getElementById("dash-panel-mine").style.display    = tab === "mine"    ? "block" : "none";
   document.getElementById("dash-panel-overall").style.display = tab === "overall" ? "block" : "none";
-  if (tab === "overall") loadTongHop();
+  if (tab === "overall") {
+    // Chỉ load lại nếu chưa có cache — tránh gọi API mỗi lần click tab
+    if (!tongHopCache) {
+      loadTongHop();
+    } else {
+      renderTongHop(); // dùng lại cache, render lại thôi
+    }
+  }
 }
 
-// Tính thống kê từ danhSachCache (toàn bộ nếu admin, phần của user nếu không)
-// Dùng làm fallback khi API tong-hop chưa sẵn sàng
+// Tính thống kê từ danhSachCache
+// Admin: danhSachCache có toàn bộ → đủ số liệu
+// User thường: chỉ có phiếu của mình → hiển thị kèm ghi chú
 function calcTongHopLocal() {
-  // Lấy toàn bộ từ cache (admin đã có all, user thường chỉ có của mình)
-  // → dùng kết hợp danhSachCache + localDrafts để có đủ số liệu
   const allRecords = getManagedRecords();
   let tong = 0, hoan_thanh = 0, dang_dien = 0, moi = 0;
   const dtvMap = {};
@@ -800,7 +806,15 @@ function calcTongHopLocal() {
     }
   });
   const theo_dtv = Object.values(dtvMap).sort((a, b) => b.tong - a.tong);
-  return { tong, hoan_thanh, dang_dien, moi, theo_dtv, source: "local" };
+  const isAdmin  = currentUser?.role === "admin";
+  return { tong, hoan_thanh, dang_dien, moi, theo_dtv,
+    source: "local",
+    scope: isAdmin ? "all" : "mine" };
+}
+
+function reloadTongHop() {
+  tongHopCache = null; // xóa cache → force refresh
+  loadTongHop();
 }
 
 async function loadTongHop() {
@@ -885,7 +899,12 @@ function renderTongHop() {
         <div class="th-progress-bar">
           <div class="th-progress-fill" style="width:${pct}%"></div>
         </div>
-        <div class="th-progress-sub">Cập nhật lúc ${now}${d.source === "local" ? " · Dữ liệu hiển thị theo quyền tài khoản (chưa có API tổng hợp)" : ""}</div>
+        <div class="th-progress-sub">
+        Cập nhật lúc ${now}
+        ${d.source === "server" ? " · <span style='color:var(--green,#27ae60)'>✓ Dữ liệu toàn hệ thống</span>" :
+          d.scope === "all"  ? " · Dữ liệu toàn hệ thống (từ bộ nhớ)" :
+                               " · Chỉ hiển thị phiếu của bạn — admin xem được toàn bộ"}
+      </div>
       </div>
 
       <!-- Bảng theo điều tra viên -->
@@ -907,7 +926,7 @@ function renderTongHop() {
       </div>` : '<div class="th-empty">Chưa có dữ liệu điều tra viên.</div>'}
 
       <div style="text-align:right;margin-top:10px;">
-        <button class="btn btn-sm" onclick="loadTongHop()">↻ Làm mới</button>
+        <button class="btn btn-sm" onclick="reloadTongHop()">↻ Làm mới</button>
       </div>
     </div>
   `;
