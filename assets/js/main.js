@@ -814,7 +814,8 @@ function calcTongHopLocal() {
   const isAdmin  = currentUser?.role === "admin";
   return { tong, hoan_thanh, dang_dien, moi, theo_dtv,
     source: "local",
-    scope: isAdmin ? "all" : "mine" };
+    scope: isAdmin ? "all" : "mine",
+    apiUnavailable: true };
 }
 
 function saveMucTieu(val) {
@@ -832,28 +833,25 @@ function reloadTongHop() {
   loadTongHop();
 }
 
-async function loadTongHop(retryCount = 0) {
+async function loadTongHop() {
   const el = document.getElementById("tonghop-grid");
-
-  // Nếu danhSachCache chưa có (đang load) → đợi rồi thử lại tối đa 8 lần
-  if (danhSachCache.length === 0 && retryCount < 8) {
-    if (el) el.innerHTML = '<div class="tonghop-loading">Đang tải dữ liệu...</div>';
-    await new Promise(r => setTimeout(r, 400));
-    return loadTongHop(retryCount + 1);
-  }
-
-  if (el) el.innerHTML = '<div class="tonghop-loading">Đang tính...</div>';
+  if (el) el.innerHTML = '<div class="tonghop-loading">Đang tải...</div>';
 
   try {
+    // Gọi API tong-hop — không cần param user, server đọc toàn bộ sheet
+    // → tất cả user đều nhận được số liệu toàn hệ thống như nhau
     const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("timeout")), 10000)
+      setTimeout(() => reject(new Error("timeout")), 12000)
     );
     const res = await Promise.race([apiGet("tong-hop"), timeoutPromise]);
     tongHopCache = (res && typeof res.tong === "number") ? res : null;
-    if (!tongHopCache) throw new Error("invalid response");
+    if (!tongHopCache) throw new Error("Phản hồi không hợp lệ: " + JSON.stringify(res));
     tongHopCache.source = "server";
+    tongHopCache.scope  = "all";
   } catch (e) {
-    console.warn("[loadTongHop] API lỗi:", e.message, "— dùng dữ liệu local");
+    console.warn("[loadTongHop] API lỗi:", e.message);
+    // Fallback: tính từ danhSachCache hiện có
+    // Admin → đủ toàn bộ; user thường → chỉ phiếu của mình + ghi chú
     tongHopCache = calcTongHopLocal();
   }
   renderTongHop();
@@ -925,9 +923,11 @@ function renderTongHop() {
         </div>
         <div class="th-progress-sub">
           Cập nhật lúc ${now}
-          ${d.source === "server" ? " · <span style='color:var(--green,#27ae60)'>✓ Dữ liệu toàn hệ thống</span>" :
-            d.scope === "all"  ? " · Dữ liệu toàn hệ thống" :
-                                 " · Hiển thị theo quyền tài khoản"}
+          ${d.source === "server"
+            ? " · <span style='color:var(--green,#27ae60)'>✓ Dữ liệu toàn hệ thống</span>"
+            : d.scope === "all"
+              ? " · Dữ liệu toàn hệ thống (bộ nhớ)"
+              : " · ⚠ Chưa kết nối được server — chỉ hiện phiếu của bạn. <a href='#' onclick='reloadTongHop();return false;' style='color:var(--primary)'>Thử lại</a>"}
         </div>
       </div>
 
