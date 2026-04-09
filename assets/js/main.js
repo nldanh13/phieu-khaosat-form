@@ -128,7 +128,8 @@ function updateAvatar(user) {
     ini.textContent = initials;
     nm.textContent  = user.name || user.username;
     rl.textContent  = user.role === "admin" ? "Quản trị viên" : "Điều tra viên";
-    wrap.style.display = "block";
+    wrap.style.display = "flex";
+    wrap.style.alignItems = "center";
     // Màu avatar khác nhau theo role
     btn.style.background = user.role === "admin" ? "var(--primary)" : "var(--teal-600,#0f6e56)";
   } else {
@@ -765,7 +766,7 @@ function renderDashboard() {
     const hay    = `${record.ma_phieu || ""} ${record.ho_ten || ""} ${record.so_ho_so || ""}`.toLowerCase();
     const matchQ = !normalizedQuery || hay.includes(normalizedQuery);
     const matchF = dashboardFilter === "all"
-      || (dashboardFilter === "draft"    && record.local_only)
+      || (dashboardFilter === "draft"    && getRecordStatus(record).text === "Phiếu mới")
       || (dashboardFilter === "progress" && !record.local_only && (record.buoc || 0) < 3)
       || (dashboardFilter === "done"     && (record.buoc || 0) >= 3);
     return matchQ && matchF;
@@ -824,7 +825,7 @@ function renderDashboard() {
       <div class="dashboard-search"><input id="dash-search" type="search" placeholder="Tìm theo tên, mã phiếu, số hồ sơ..." value="${escapeHtml(dashboardQuery)}"></div>
       <div class="segmented" id="dash-segmented">
         <button data-filter="all"      class="${dashboardFilter === "all"      ? "active" : ""}">Tất cả</button>
-        <button data-filter="draft"    class="${dashboardFilter === "draft"    ? "active" : ""}">Nháp máy</button>
+        <button data-filter="draft"    class="${dashboardFilter === "draft"    ? "active" : ""}">Phiếu mới</button>
         <button data-filter="progress" class="${dashboardFilter === "progress" ? "active" : ""}">Đang điền</button>
         <button data-filter="done"     class="${dashboardFilter === "done"     ? "active" : ""}">Hoàn thành</button>
       </div>
@@ -853,7 +854,7 @@ function changePage(page) {
     const hay    = `${record.ma_phieu || ""} ${record.ho_ten || ""} ${record.so_ho_so || ""}`.toLowerCase();
     const matchQ = !dashboardQuery.trim() || hay.includes(dashboardQuery.trim().toLowerCase());
     const matchF = dashboardFilter === "all"
-      || (dashboardFilter === "draft"    && record.local_only)
+      || (dashboardFilter === "draft"    && getRecordStatus(record).text === "Phiếu mới")
       || (dashboardFilter === "progress" && !record.local_only && (record.buoc || 0) < 3)
       || (dashboardFilter === "done"     && (record.buoc || 0) >= 3);
     return matchQ && matchF;
