@@ -341,7 +341,12 @@ function showScreen(name, options = {}) {
   document.getElementById("btn-dash").style.display    = (name === "new")  ? "inline-block" : "none";
   document.getElementById("btn-new-top").style.display = (name === "dash") ? "inline-block" : "none";
 
-  if (name === "dash") { renderDashboard(); return; }
+  if (name === "dash") {
+    renderDashboard();
+    // Nếu chưa có cache thống kê (vừa vào hoặc refresh) thì load ngay
+    if (!tongHopCache) loadTongHop();
+    return;
+  }
 
   if (name === "new") {
     const record        = options.record || null;
@@ -761,15 +766,25 @@ async function loadDanhSach() {
       "Không kết nối được API. Vẫn có thể tiếp tục các phiếu nháp đã lưu trên máy. (" + e.message + ")",
       "error"
     );
+    loadTongHop(); // vẫn thử load thống kê dù danh sách lỗi
   }
 }
 
 async function loadTongHop() {
+  // Hiện "Đang tải..." ngay
+  const el = document.getElementById("tonghop-grid");
+  if (el) el.innerHTML = '<div class="tonghop-loading">Đang tải...</div>';
+
   try {
-    const res = await apiGet("tong-hop");
+    // Timeout 12s — tránh treo mãi nếu GAS phản hồi chậm
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("Hết thời gian chờ")), 12000)
+    );
+    const res = await Promise.race([apiGet("tong-hop"), timeoutPromise]);
     tongHopCache = res;
   } catch (e) {
-    tongHopCache = null; // network lỗi → ẩn khung đi, không crash
+    console.warn("[loadTongHop] lỗi:", e.message);
+    tongHopCache = null;
   }
   renderTongHop();
 }
@@ -779,7 +794,7 @@ function renderTongHop() {
   if (!el) return;
   const d = tongHopCache;
   if (!d) {
-    el.innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:8px 0;">Không tải được dữ liệu thống kê.</div>';
+    el.innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:8px 0;">Chưa tải được — <a href="#" onclick="loadTongHop();return false;" style="color:var(--primary)">thử lại</a></div>';
     return;
   }
 
