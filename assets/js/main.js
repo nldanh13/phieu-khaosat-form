@@ -754,9 +754,10 @@ async function loadDanhSach() {
     "info"
   );
   try {
-    // admin truyền user="all" để lấy toàn bộ, user thường truyền tên mình
-    const userParam = currentUser?.role === "admin" ? "all" : (currentUser?.name || "");
-    const res = await apiGet("danh-sach", { user: userParam });
+    // Tất cả user đều load toàn bộ (user=all)
+    // Dashboard "Phiếu của tôi" lọc theo currentUser ở client
+    // → tab Tổng quan có đủ dữ liệu cho calcTongHopLocal fallback
+    const res = await apiGet("danh-sach", { user: "all" });
     console.log("[loadDanhSach] raw response:", JSON.stringify(res)?.slice(0, 300));
     danhSachCache = Array.isArray(res) ? res : (res.data || res.items || []);
     console.log("[loadDanhSach] cache size:", danhSachCache.length, "| first ma_phieu:", danhSachCache[0]?.ma_phieu);
@@ -967,7 +968,17 @@ function renderTongHop() {
 }
 
 function renderDashboard() {
-  const records         = getManagedRecords();
+  // "Phiếu của tôi": chỉ hiện phiếu thuộc về user đang đăng nhập
+  const allRecords = getManagedRecords();
+  const myName     = currentUser?.name || currentUser?.username || "";
+  const isAdmin    = currentUser?.role === "admin";
+  const records    = isAdmin
+    ? allRecords
+    : allRecords.filter(r => {
+        const dtv  = String(r.dieu_tra_vien || r.user || "").trim();
+        const owner = String(r.created_by || dtv).trim();
+        return dtv === myName || owner === myName;
+      });
   const normalizedQuery = dashboardQuery.trim().toLowerCase();
   const filtered        = records.filter(record => {
     const hay    = `${record.ma_phieu || ""} ${record.ho_ten || ""} ${record.so_ho_so || ""}`.toLowerCase();
