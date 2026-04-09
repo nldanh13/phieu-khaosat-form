@@ -778,24 +778,47 @@ function switchDashTab(tab) {
   if (tab === "overall") loadTongHop();
 }
 
+// Tính thống kê từ danhSachCache (toàn bộ nếu admin, phần của user nếu không)
+// Dùng làm fallback khi API tong-hop chưa sẵn sàng
+function calcTongHopLocal() {
+  // Lấy toàn bộ từ cache (admin đã có all, user thường chỉ có của mình)
+  // → dùng kết hợp danhSachCache + localDrafts để có đủ số liệu
+  const allRecords = getManagedRecords();
+  let tong = 0, hoan_thanh = 0, dang_dien = 0, moi = 0;
+  const dtvMap = {};
+  allRecords.forEach(r => {
+    tong++;
+    const buoc = Number(r.buoc || 0);
+    if (buoc >= 3)      hoan_thanh++;
+    else if (buoc >= 2) dang_dien++;
+    else                moi++;
+    const dtv = String(r.dieu_tra_vien || r.user || "").trim();
+    if (dtv) {
+      if (!dtvMap[dtv]) dtvMap[dtv] = { ten: dtv, tong: 0, hoan_thanh: 0 };
+      dtvMap[dtv].tong++;
+      if (buoc >= 3) dtvMap[dtv].hoan_thanh++;
+    }
+  });
+  const theo_dtv = Object.values(dtvMap).sort((a, b) => b.tong - a.tong);
+  return { tong, hoan_thanh, dang_dien, moi, theo_dtv, source: "local" };
+}
+
 async function loadTongHop() {
-  // Hiện "Đang tải..." ngay
   const el = document.getElementById("tonghop-grid");
   if (el) el.innerHTML = '<div class="tonghop-loading">Đang tải...</div>';
 
   try {
-    // Timeout 12s — tránh treo mãi nếu GAS phản hồi chậm
     const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Hết thời gian chờ")), 12000)
+      setTimeout(() => reject(new Error("timeout")), 10000)
     );
     const res = await Promise.race([apiGet("tong-hop"), timeoutPromise]);
-    // GAS jsonOk trả về object phẳng có trường tong/hoan_thanh/...
-    // Nếu success=true thì data nằm ngay ở res, không wrap thêm
     tongHopCache = (res && typeof res.tong === "number") ? res : null;
-    if (!tongHopCache) throw new Error("Dữ liệu không hợp lệ: " + JSON.stringify(res));
+    if (!tongHopCache) throw new Error("invalid response");
+    tongHopCache.source = "server";
   } catch (e) {
-    console.warn("[loadTongHop] lỗi:", e.message);
-    tongHopCache = null;
+    console.warn("[loadTongHop] API lỗi:", e.message, "— dùng dữ liệu local");
+    // Fallback: tính từ cache đang có (danhSachCache đã load trước đó)
+    tongHopCache = calcTongHopLocal();
   }
   renderTongHop();
 }
@@ -862,7 +885,7 @@ function renderTongHop() {
         <div class="th-progress-bar">
           <div class="th-progress-fill" style="width:${pct}%"></div>
         </div>
-        <div class="th-progress-sub">Cập nhật lúc ${now}</div>
+        <div class="th-progress-sub">Cập nhật lúc ${now}${d.source === "local" ? " · Dữ liệu hiển thị theo quyền tài khoản (chưa có API tổng hợp)" : ""}</div>
       </div>
 
       <!-- Bảng theo điều tra viên -->
