@@ -90,6 +90,7 @@ let currentMaPhieu     = null;
 let currentRecordSource = "new";
 let danhSachCache      = [];
 let tongHopCache       = null; // thống kê toàn hệ thống
+let activeDashTab      = 'mine'; // 'mine' | 'overall'
 let dashboardFilter    = "all";
 let dashboardQuery     = "";
 let draftSaveTimer     = null;
@@ -343,8 +344,6 @@ function showScreen(name, options = {}) {
 
   if (name === "dash") {
     renderDashboard();
-    // Nếu chưa có cache thống kê (vừa vào hoặc refresh) thì load ngay
-    if (!tongHopCache) loadTongHop();
     return;
   }
 
@@ -770,6 +769,15 @@ async function loadDanhSach() {
   }
 }
 
+function switchDashTab(tab) {
+  activeDashTab = tab;
+  document.getElementById("dash-tab-mine").classList.toggle("active", tab === "mine");
+  document.getElementById("dash-tab-overall").classList.toggle("active", tab === "overall");
+  document.getElementById("dash-panel-mine").style.display    = tab === "mine"    ? "block" : "none";
+  document.getElementById("dash-panel-overall").style.display = tab === "overall" ? "block" : "none";
+  if (tab === "overall") loadTongHop();
+}
+
 async function loadTongHop() {
   // Hiện "Đang tải..." ngay
   const el = document.getElementById("tonghop-grid");
@@ -781,7 +789,10 @@ async function loadTongHop() {
       setTimeout(() => reject(new Error("Hết thời gian chờ")), 12000)
     );
     const res = await Promise.race([apiGet("tong-hop"), timeoutPromise]);
-    tongHopCache = res;
+    // GAS jsonOk trả về object phẳng có trường tong/hoan_thanh/...
+    // Nếu success=true thì data nằm ngay ở res, không wrap thêm
+    tongHopCache = (res && typeof res.tong === "number") ? res : null;
+    if (!tongHopCache) throw new Error("Dữ liệu không hợp lệ: " + JSON.stringify(res));
   } catch (e) {
     console.warn("[loadTongHop] lỗi:", e.message);
     tongHopCache = null;
@@ -804,51 +815,78 @@ function renderTongHop() {
   // Bảng theo điều tra viên
   const dtvRows = (d.theo_dtv || []).map(dtv => {
     const p = dtv.tong > 0 ? Math.round(dtv.hoan_thanh / dtv.tong * 100) : 0;
+    const dd = dtv.tong - dtv.hoan_thanh;
     return `<tr>
-      <td style="padding:5px 8px;">${escapeHtml(dtv.ten)}</td>
-      <td style="padding:5px 8px;text-align:center;">${dtv.tong}</td>
-      <td style="padding:5px 8px;text-align:center;">${dtv.hoan_thanh}</td>
-      <td style="padding:5px 8px;">
-        <div style="display:flex;align-items:center;gap:6px;">
-          <div style="flex:1;background:var(--border);border-radius:4px;height:6px;overflow:hidden;">
-            <div style="width:${p}%;background:var(--primary);height:6px;border-radius:4px;transition:width .4s;"></div>
-          </div>
-          <span style="font-size:11px;color:var(--text-muted);min-width:30px;">${p}%</span>
+      <td>${escapeHtml(dtv.ten)}</td>
+      <td class="tc">${dtv.tong}</td>
+      <td class="tc th-green">${dtv.hoan_thanh}</td>
+      <td class="tc th-amber">${dd}</td>
+      <td>
+        <div class="th-mini-bar-wrap">
+          <div class="th-mini-bar"><div class="th-mini-fill" style="width:${p}%"></div></div>
+          <span class="th-mini-pct">${p}%</span>
         </div>
       </td>
     </tr>`;
   }).join("");
 
+  const now = new Date().toLocaleString("vi-VN", { hour:"2-digit", minute:"2-digit", day:"2-digit", month:"2-digit" });
   el.innerHTML = `
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;">
-      <div class="stat-card" style="border-color:var(--primary);"><div class="stat-num">${d.tong}</div><div class="stat-lbl">Tổng toàn bộ</div></div>
-      <div class="stat-card"><div class="stat-num" style="color:var(--green)">${d.hoan_thanh}</div><div class="stat-lbl">Hoàn thành</div></div>
-      <div class="stat-card"><div class="stat-num" style="color:var(--amber)">${d.dang_dien}</div><div class="stat-lbl">Đang điền</div></div>
-      <div class="stat-card"><div class="stat-num" style="color:var(--text-muted)">${d.moi}</div><div class="stat-lbl">Chưa điền</div></div>
-    </div>
-    <div style="margin-bottom:10px;">
-      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);margin-bottom:4px;">
-        <span>Tiến độ hoàn thành</span><span>${pct}%</span>
+    <div class="tonghop-wrap">
+      <!-- Hàng số liệu chính -->
+      <div class="th-stat-row">
+        <div class="th-stat-box th-main">
+          <div class="th-num">${d.tong}</div>
+          <div class="th-lbl">Tổng số mẫu</div>
+        </div>
+        <div class="th-stat-box">
+          <div class="th-num th-green">${d.hoan_thanh}</div>
+          <div class="th-lbl">✅ Hoàn thành</div>
+        </div>
+        <div class="th-stat-box">
+          <div class="th-num th-amber">${d.dang_dien}</div>
+          <div class="th-lbl">⏳ Đang điền</div>
+        </div>
+        <div class="th-stat-box">
+          <div class="th-num th-muted">${d.moi}</div>
+          <div class="th-lbl">🆕 Chưa điền</div>
+        </div>
       </div>
-      <div style="background:var(--border);border-radius:6px;height:8px;overflow:hidden;">
-        <div style="width:${pct}%;background:var(--primary);height:8px;border-radius:6px;transition:width .6s;"></div>
+
+      <!-- Thanh tiến độ -->
+      <div class="th-progress-wrap">
+        <div class="th-progress-label">
+          <span>Tiến độ hoàn thành toàn nghiên cứu</span>
+          <span class="th-pct">${pct}%</span>
+        </div>
+        <div class="th-progress-bar">
+          <div class="th-progress-fill" style="width:${pct}%"></div>
+        </div>
+        <div class="th-progress-sub">Cập nhật lúc ${now}</div>
+      </div>
+
+      <!-- Bảng theo điều tra viên -->
+      ${dtvRows ? `
+      <div class="th-section-title">Tiến độ theo điều tra viên</div>
+      <div class="th-table-wrap">
+        <table class="th-table">
+          <thead>
+            <tr>
+              <th>Điều tra viên</th>
+              <th>Tổng</th>
+              <th>Hoàn thành</th>
+              <th>Đang điền</th>
+              <th>Tiến độ</th>
+            </tr>
+          </thead>
+          <tbody>${dtvRows}</tbody>
+        </table>
+      </div>` : '<div class="th-empty">Chưa có dữ liệu điều tra viên.</div>'}
+
+      <div style="text-align:right;margin-top:10px;">
+        <button class="btn btn-sm" onclick="loadTongHop()">↻ Làm mới</button>
       </div>
     </div>
-    ${dtvRows ? `
-    <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px;">Theo điều tra viên</div>
-    <div style="overflow-x:auto;">
-      <table style="width:100%;border-collapse:collapse;font-size:12px;">
-        <thead>
-          <tr style="background:var(--surface-raised,#f5f5f5);">
-            <th style="padding:5px 8px;text-align:left;font-weight:600;">Điều tra viên</th>
-            <th style="padding:5px 8px;text-align:center;font-weight:600;">Tổng</th>
-            <th style="padding:5px 8px;text-align:center;font-weight:600;">Hoàn thành</th>
-            <th style="padding:5px 8px;text-align:left;font-weight:600;">Tiến độ</th>
-          </tr>
-        </thead>
-        <tbody>${dtvRows}</tbody>
-      </table>
-    </div>` : ""}
   `;
 }
 

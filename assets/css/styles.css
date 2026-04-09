@@ -557,3 +557,112 @@ body{font-family:'Be Vietnam Pro',system-ui,sans-serif;font-size:14px;line-heigh
 #tonghop-grid tbody tr:hover {
   background: var(--hover, rgba(0,0,0,.04));
 }
+
+/* ── Dashboard 2 tabs ──────────────────────────────────────── */
+.dash-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  border-bottom: 2px solid var(--border);
+  padding-bottom: 0;
+}
+.dash-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  padding: 8px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 6px 6px 0 0;
+  transition: color .15s, border-color .15s;
+}
+.dash-tab:hover  { color: var(--primary); }
+.dash-tab.active { color: var(--primary); border-bottom-color: var(--primary); background: none; }
+
+/* ── Tổng quan nghiên cứu ──────────────────────────────────── */
+.tonghop-wrap { padding: 4px 0; }
+
+.th-stat-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.th-stat-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 12px;
+  text-align: center;
+}
+.th-stat-box.th-main { border-color: var(--primary); }
+.th-num  { font-size: 28px; font-weight: 700; line-height: 1.1; color: var(--primary); }
+.th-lbl  { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+.th-green { color: var(--green, #27ae60) !important; }
+.th-amber { color: var(--amber, #e67e22) !important; }
+.th-muted { color: var(--text-muted) !important; }
+
+.th-progress-wrap { margin-bottom: 18px; }
+.th-progress-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 5px;
+}
+.th-pct { font-weight: 700; color: var(--primary); }
+.th-progress-bar {
+  background: var(--border);
+  border-radius: 8px;
+  height: 10px;
+  overflow: hidden;
+}
+.th-progress-fill {
+  background: var(--primary);
+  height: 10px;
+  border-radius: 8px;
+  transition: width .7s cubic-bezier(.4,0,.2,1);
+}
+.th-progress-sub { font-size: 10px; color: var(--text-muted); margin-top: 4px; text-align: right; }
+
+.th-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  margin-bottom: 8px;
+}
+.th-table-wrap { overflow-x: auto; border-radius: 8px; border: 1px solid var(--border); }
+.th-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.th-table thead tr { background: var(--surface-raised, #f5f7f9); }
+.th-table th {
+  padding: 7px 10px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.th-table td { padding: 7px 10px; border-top: 1px solid var(--border); }
+.th-table tbody tr:hover { background: var(--hover, rgba(0,0,0,.03)); }
+.th-table .tc { text-align: center; }
+
+.th-mini-bar-wrap { display: flex; align-items: center; gap: 6px; min-width: 100px; }
+.th-mini-bar { flex: 1; background: var(--border); border-radius: 4px; height: 6px; overflow: hidden; }
+.th-mini-fill { background: var(--primary); height: 6px; border-radius: 4px; transition: width .4s; }
+.th-mini-pct { font-size: 11px; color: var(--text-muted); min-width: 32px; text-align: right; }
+
+.th-empty { font-size: 12px; color: var(--text-muted); padding: 16px 0; text-align: center; }
+.tonghop-loading { font-size: 12px; color: var(--text-muted); padding: 24px 0; text-align: center; }
+
+@media (max-width: 600px) {
+  .th-stat-row { grid-template-columns: repeat(2, 1fr); }
+  .dash-tab { padding: 8px 12px; font-size: 12px; }
+}

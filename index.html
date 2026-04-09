@@ -66,30 +66,34 @@
     <div class="container">
       <div id="dash-alert" class="alert hidden"></div>
 
-      <!-- Khung thống kê toàn hệ thống — tất cả user đều thấy -->
-      <div class="tonghop-card" id="tonghop-card">
-        <div class="tonghop-header">
-          <span class="tonghop-title">📊 Thống kê toàn nghiên cứu</span>
-          <button class="btn btn-sm" onclick="loadTongHop()" title="Tải lại">↻</button>
-        </div>
-        <div id="tonghop-grid"><div class="tonghop-loading">Đang tải...</div></div>
+      <!-- Tab bar -->
+      <div class="dash-tabs">
+        <button class="dash-tab active" id="dash-tab-mine"    onclick="switchDashTab('mine')">📋 Phiếu của tôi</button>
+        <button class="dash-tab"        id="dash-tab-overall" onclick="switchDashTab('overall')">📊 Tổng quan nghiên cứu</button>
       </div>
 
-      <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px;">Phiếu của tôi</div>
-      <div class="stat-grid" id="stat-grid">
-        <div class="stat-card"><div class="stat-num">—</div><div class="stat-lbl">Tổng phiếu</div></div>
-        <div class="stat-card"><div class="stat-num">—</div><div class="stat-lbl">Phiếu mới</div></div>
-        <div class="stat-card"><div class="stat-num">—</div><div class="stat-lbl">Đang điền</div></div>
-        <div class="stat-card"><div class="stat-num">—</div><div class="stat-lbl">Hoàn thành</div></div>
-      </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-        <div style="font-size:13px;font-weight:600;">Danh sách phiếu</div>
-        <div class="btn-group">
-          <button class="btn btn-sm" onclick="loadDanhSach()">Tải lại</button>
-          <button class="btn btn-sm btn-primary" onclick="showScreen('new')">+ Phiếu mới</button>
+      <!-- Tab: Phiếu của tôi -->
+      <div id="dash-panel-mine">
+        <div class="stat-grid" id="stat-grid">
+          <div class="stat-card"><div class="stat-num">—</div><div class="stat-lbl">Tổng phiếu</div></div>
+          <div class="stat-card"><div class="stat-num">—</div><div class="stat-lbl">Phiếu mới</div></div>
+          <div class="stat-card"><div class="stat-num">—</div><div class="stat-lbl">Đang điền</div></div>
+          <div class="stat-card"><div class="stat-num">—</div><div class="stat-lbl">Hoàn thành</div></div>
         </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <div style="font-size:13px;font-weight:600;">Danh sách phiếu</div>
+          <div class="btn-group">
+            <button class="btn btn-sm" onclick="loadDanhSach()">↻ Tải lại</button>
+            <button class="btn btn-sm btn-primary" onclick="showScreen('new')">+ Phiếu mới</button>
+          </div>
+        </div>
+        <div id="phieu-list"></div>
       </div>
-      <div id="phieu-list"></div>
+
+      <!-- Tab: Tổng quan nghiên cứu -->
+      <div id="dash-panel-overall" style="display:none;">
+        <div id="tonghop-grid"><div class="tonghop-loading">Đang tải...</div></div>
+      </div>
     </div>
   </div>
 
