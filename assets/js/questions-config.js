@@ -1,12 +1,3 @@
-// ============================================================
-// questions-config.js — Nội dung câu hỏi
-// Chỉnh sửa file này để thêm/sửa/xóa câu hỏi
-// KHÔNG cần đụng vào main.js
-// ============================================================
-
-// ── HADS — 14 câu lo âu và trầm cảm ────────────────────────
-// t: "A" = lo âu, "D" = trầm cảm
-// opts: 4 lựa chọn theo thứ tự điểm 0→3
 window.HADS_DATA = [
   {
     id: 1, t: "A",
