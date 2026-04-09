@@ -187,7 +187,13 @@ function getMergedRecordByMa(ma) {
   const local  = getLocalDraft(ma);
   const merged = { ...(remote || {}), ...((local && local.data) || {}) };
   merged.ma_phieu   = ma;
-  merged.buoc       = Math.max(Number(remote?.buoc || 0), Number(local?.buoc || 0), 1);
+  // buoc từ Sheets có thể là datetime object (Sheets bug) — cần parse số thuần
+  const parseBuoc = v => {
+    if (!v && v !== 0) return 0;
+    const n = parseInt(String(v), 10);       // parseInt("3") = 3, parseInt("Thu Jan...") = NaN
+    return (!isNaN(n) && n >= 1 && n <= 3) ? n : 0;
+  };
+  merged.buoc       = Math.max(parseBuoc(remote?.buoc), parseBuoc(local?.buoc), 1);
   merged.last_step  = Number(local?.last_step || merged.buoc || 1);
   merged.updated_at = local?.updated_at || remote?.updated_at || remote?.ngay_thu_thap || "";
   merged.local_only = Boolean(local && !remote);
