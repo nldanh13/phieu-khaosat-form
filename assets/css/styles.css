@@ -405,3 +405,34 @@ body{font-family:'Be Vietnam Pro',system-ui,sans-serif;font-size:14px;line-heigh
 }
 
 .opt-chip.chip-selected input { accent-color: #fff; }
+/* ── Thuốc động ── */
+.thuoc-row {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: var(--surface);
+  position: relative;
+}
+.thuoc-row-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.btn-remove-thuoc {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 7px;
+  line-height: 1.4;
+  transition: background 0.15s, color 0.15s;
+}
+.btn-remove-thuoc:hover {
+  background: var(--red, #e53e3e);
+  color: #fff;
+  border-color: transparent;
+}

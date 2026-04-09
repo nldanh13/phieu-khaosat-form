@@ -238,6 +238,8 @@ function showScreen(name, options = {}) {
     currentMaPhieu      = record?.ma_phieu || genMaPhieu();
     currentHighestStep  = Math.max(Number(record?.buoc || 0), 1);
     buildStep1(); buildStep2(); buildStep3();
+    // Khởi tạo 1 hàng thuốc trống cho mỗi ngày
+    [1, 2, 3].forEach(d => applyThuocNgay(d, ""));
     ensureFooterControls();
     ensureModeBanner();
     bindAutosave();
@@ -408,6 +410,8 @@ const STEP2_FIELDS = new Set([
 const STEP3_FIELDS = new Set([
   "ngay_pt_thuc","tg_pt","pp_pt_thuc","vo_cam_thuc","mat_mau","truyen_mau",
   "vas1","vas2","vas3","van_dong","kha_nang_vd","bien_chung","tg_nam_vien",
+  "thuoc_ngay_1","thuoc_ngay_2","thuoc_ngay_3",
+  // backward-compat với phiếu cũ
   "thuoc_nhom1","thuoc_lieu1","thuoc_hq1","thuoc_tdp1",
   "thuoc_nhom2","thuoc_lieu2","thuoc_hq2","thuoc_tdp2",
   "thuoc_nhom3","thuoc_lieu3","thuoc_hq3","thuoc_tdp3",
@@ -816,9 +820,6 @@ const FIELD_ID_MAP = {
   vas1: "f_vas1", vas2: "f_vas2", vas3: "f_vas3",
   van_dong: "f_vanDong", kha_nang_vd: "f_khanangVD", bien_chung: "f_bienChung",
   tg_nam_vien: "f_tgNamVien", nhan_xet: "f_nhanXet",
-  thuoc_nhom1: "f_thuocNhom1", thuoc_lieu1: "f_thuocLieu1", thuoc_hq1: "f_thuocHQ1", thuoc_tdp1: "f_thuocTDP1",
-  thuoc_nhom2: "f_thuocNhom2", thuoc_lieu2: "f_thuocLieu2", thuoc_hq2: "f_thuocHQ2", thuoc_tdp2: "f_thuocTDP2",
-  thuoc_nhom3: "f_thuocNhom3", thuoc_lieu3: "f_thuocLieu3", thuoc_hq3: "f_thuocHQ3", thuoc_tdp3: "f_thuocTDP3",
 };
 
 // [FIX-DATE] Google Sheets tự convert string thành Date object khi đọc lại:
@@ -889,6 +890,22 @@ function applyFormData(data = {}) {
     const r = document.querySelector(`input[name="hl_${i}"][value="${parseInt(v, 10)}"]`);
     if (r) r.checked = true;
   }
+  // Thuốc động: ưu tiên thuoc_ngay_*, fallback về field cũ nếu có
+  [1, 2, 3].forEach(d => {
+    if (data[`thuoc_ngay_${d}`]) {
+      applyThuocNgay(d, data[`thuoc_ngay_${d}`]);
+    } else if (data[`thuoc_nhom${d}`]) {
+      // backward-compat: convert field cũ sang 1 hàng
+      applyThuocNgay(d, JSON.stringify([{
+        nhom: data[`thuoc_nhom${d}`] || "",
+        lieu: data[`thuoc_lieu${d}`] || "",
+        hq:   data[`thuoc_hq${d}`]   || "",
+        tdp:  data[`thuoc_tdp${d}`]  || "",
+      }]));
+    } else {
+      applyThuocNgay(d, "");
+    }
+  });
   updateRangeIndicators();
   if (typeof calcBMI  === "function") calcBMI();
   if (typeof calcHADS === "function") calcHADS();
@@ -982,9 +999,9 @@ function collectStep(n) {
     vas1:          getNum("f_vas1"),
     vas2:          getNum("f_vas2"),
     vas3:          getNum("f_vas3"),
-    thuoc_nhom1:   getText("f_thuocNhom1"), thuoc_lieu1: getText("f_thuocLieu1"), thuoc_hq1: getText("f_thuocHQ1"), thuoc_tdp1: getText("f_thuocTDP1"),
-    thuoc_nhom2:   getText("f_thuocNhom2"), thuoc_lieu2: getText("f_thuocLieu2"), thuoc_hq2: getText("f_thuocHQ2"), thuoc_tdp2: getText("f_thuocTDP2"),
-    thuoc_nhom3:   getText("f_thuocNhom3"), thuoc_lieu3: getText("f_thuocLieu3"), thuoc_hq3: getText("f_thuocHQ3"), thuoc_tdp3: getText("f_thuocTDP3"),
+    thuoc_ngay_1: collectThuocNgay(1),
+    thuoc_ngay_2: collectThuocNgay(2),
+    thuoc_ngay_3: collectThuocNgay(3),
     van_dong:      getText("f_vanDong"),
     kha_nang_vd:   getText("f_khanangVD"),
     bien_chung:    getText("f_bienChung"),
@@ -994,6 +1011,138 @@ function collectStep(n) {
     hl_3: radio("hl_3"), hl_4: radio("hl_4"),
     nhan_xet:      getText("f_nhanXet"),
   };
+}
+
+// ── Thuốc động (dynamic drug rows) ──────────────────────────
+const MAX_THUOC_PER_NGAY = 0; // 0 = không giới hạn
+
+// Tạo HTML cho một hàng thuốc
+function renderThuocRow(ngay, idx, data = {}) {
+  const rowId = `thuoc_d${ngay}_r${idx}`;
+  const canDelete = idx > 0; // hàng đầu không xóa được
+  return `
+  <div class="thuoc-row" id="${rowId}" data-ngay="${ngay}" data-idx="${idx}">
+    <div class="thuoc-row-head">
+      <span style="font-size:11px;font-weight:600;color:var(--text-muted);">Thuốc ${idx + 1}</span>
+      ${canDelete ? `<button type="button" class="btn-remove-thuoc" onclick="removeThuocRow(${ngay},${idx})" title="Xóa thuốc này">✕</button>` : ""}
+    </div>
+    <div class="form-row" style="margin-bottom:0">
+      <div class="form-group">
+        <label>Nhóm thuốc</label>
+        <select id="${rowId}_nhom">
+          <option value="">Chọn...</option>
+          <option value="Không dùng"${data.nhom==="Không dùng"?" selected":""}>Không dùng</option>
+          <option value="Paracetamol"${data.nhom==="Paracetamol"?" selected":""}>Paracetamol</option>
+          <option value="NSAID"${data.nhom==="NSAID"?" selected":""}>NSAID (Ibuprofen, Diclofenac...)</option>
+          <option value="Opioid yếu"${data.nhom==="Opioid yếu"?" selected":""}>Opioid yếu (Tramadol, Codeine...)</option>
+          <option value="Opioid mạnh"${data.nhom==="Opioid mạnh"?" selected":""}>Opioid mạnh (Morphine, Fentanyl...)</option>
+          <option value="Phối hợp"${data.nhom==="Phối hợp"?" selected":""}>Phối hợp nhiều nhóm</option>
+          <option value="Khác"${data.nhom==="Khác"?" selected":""}>Khác</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Liều lượng / đường dùng</label>
+        <input type="text" id="${rowId}_lieu" value="${data.lieu||""}" placeholder="VD: 1g TM x3/ngày">
+      </div>
+    </div>
+    <div class="form-row" style="margin-bottom:0;margin-top:8px;">
+      <div class="form-group">
+        <label>Hiệu quả giảm đau</label>
+        <select id="${rowId}_hq">
+          <option value="">Chọn...</option>
+          <option value="Tốt"${data.hq==="Tốt"?" selected":""}>Tốt — giảm đau rõ rệt</option>
+          <option value="Trung bình"${data.hq==="Trung bình"?" selected":""}>Trung bình — giảm một phần</option>
+          <option value="Kém"${data.hq==="Kém"?" selected":""}>Kém — ít hoặc không giảm</option>
+          <option value="Không đánh giá được"${data.hq==="Không đánh giá được"?" selected":""}>Không đánh giá được</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Tác dụng phụ</label>
+        <select id="${rowId}_tdp">
+          <option value="">Chọn...</option>
+          <option value="Không có"${data.tdp==="Không có"?" selected":""}>Không có</option>
+          <option value="Buồn nôn / nôn"${data.tdp==="Buồn nôn / nôn"?" selected":""}>Buồn nôn / nôn</option>
+          <option value="Chóng mặt"${data.tdp==="Chóng mặt"?" selected":""}>Chóng mặt</option>
+          <option value="Táo bón"${data.tdp==="Táo bón"?" selected":""}>Táo bón</option>
+          <option value="Ngủ gà"${data.tdp==="Ngủ gà"?" selected":""}>Ngủ gà / buồn ngủ</option>
+          <option value="Ngứa"${data.tdp==="Ngứa"?" selected":""}>Ngứa</option>
+          <option value="Hạ huyết áp"${data.tdp==="Hạ huyết áp"?" selected":""}>Hạ huyết áp</option>
+          <option value="Khó thở"${data.tdp==="Khó thở"?" selected":""}>Khó thở</option>
+          <option value="Khác"${data.tdp==="Khác"?" selected":""}>Khác</option>
+        </select>
+      </div>
+    </div>
+  </div>`;
+}
+
+// Thêm 1 hàng thuốc vào ngày d
+function addThuocRow(ngay) {
+  const list = document.getElementById(`thuoc_list_d${ngay}`);
+  if (!list) return;
+  const currentRows = list.querySelectorAll(".thuoc-row").length;
+  if (MAX_THUOC_PER_NGAY > 0 && currentRows >= MAX_THUOC_PER_NGAY) {
+    alert(`Tối đa ${MAX_THUOC_PER_NGAY} thuốc mỗi ngày.`);
+    return;
+  }
+  list.insertAdjacentHTML("beforeend", renderThuocRow(ngay, currentRows));
+}
+
+// Xóa hàng thuốc (re-index lại)
+function removeThuocRow(ngay, idx) {
+  const list = document.getElementById(`thuoc_list_d${ngay}`);
+  if (!list) return;
+  const rows = list.querySelectorAll(".thuoc-row");
+  if (rows.length <= 1) return; // luôn giữ ít nhất 1 hàng
+  // Collect data trước khi xóa
+  const allData = collectThuocNgayRaw(ngay);
+  allData.splice(idx, 1);
+  // Re-render
+  list.innerHTML = allData.map((d, i) => renderThuocRow(ngay, i, d)).join("");
+  updateAddThuocBtn(ngay);
+}
+
+// updateAddThuocBtn: không dùng (không giới hạn), giữ lại để tránh lỗi nếu gọi
+function updateAddThuocBtn(ngay) {}
+
+// Collect raw array of objects từ DOM
+function collectThuocNgayRaw(ngay) {
+  const list = document.getElementById(`thuoc_list_d${ngay}`);
+  if (!list) return [];
+  const rows = list.querySelectorAll(".thuoc-row");
+  return [...rows].map((_, i) => {
+    const rowId = `thuoc_d${ngay}_r${i}`;
+    return {
+      nhom: document.getElementById(`${rowId}_nhom`)?.value || "",
+      lieu: document.getElementById(`${rowId}_lieu`)?.value || "",
+      hq:   document.getElementById(`${rowId}_hq`)?.value   || "",
+      tdp:  document.getElementById(`${rowId}_tdp`)?.value  || "",
+    };
+  }).filter(r => r.nhom || r.lieu); // bỏ hàng trống hoàn toàn
+}
+
+// Collect → JSON string (để lưu vào 1 field Sheets)
+function collectThuocNgay(ngay) {
+  const arr = collectThuocNgayRaw(ngay);
+  return arr.length ? JSON.stringify(arr) : "";
+}
+
+// Apply thuoc data vào DOM (khi mở phiếu cũ)
+function applyThuocNgay(ngay, rawValue) {
+  const list = document.getElementById(`thuoc_list_d${ngay}`);
+  if (!list) return;
+
+  let arr = [];
+
+  // Thử parse JSON mới
+  if (rawValue && typeof rawValue === "string" && rawValue.trim().startsWith("[")) {
+    try { arr = JSON.parse(rawValue); } catch { arr = []; }
+  }
+  // Backward-compat: convert từ field cũ (thuoc_nhom1/2/3 → ngày 1)
+  // Được gọi riêng ở applyFormData nếu không có thuoc_ngay_*
+
+  if (arr.length === 0) { list.innerHTML = renderThuocRow(ngay, 0); }
+  else { list.innerHTML = arr.map((d, i) => renderThuocRow(ngay, i, d)).join(""); }
+  updateAddThuocBtn(ngay);
 }
 
 // ── Build Steps HTML ─────────────────────────────────────────
@@ -1224,53 +1373,9 @@ function buildStep3() {
         <div class="vas-wrap"><span style="font-size:11px;color:var(--text-muted);min-width:18px;">0</span><input type="range" min="0" max="10" step="1" id="f_vas${d}" value="0" oninput="document.getElementById(\'vasv${d}\').textContent=this.value"><span class="vas-num" id="vasv${d}">0</span><span style="font-size:11px;color:var(--text-muted);">10</span></div>
       </div>
 
-      <div class="form-row" style="margin-bottom:0">
-        <div class="form-group">
-          <label>Nhóm thuốc dùng</label>
-          <select id="f_thuocNhom${d}">
-            <option value="">Chọn...</option>
-            <option value="Không dùng">Không dùng</option>
-            <option value="Paracetamol">Paracetamol</option>
-            <option value="NSAID">NSAID (Ibuprofen, Diclofenac...)</option>
-            <option value="Opioid yếu">Opioid yếu (Tramadol, Codeine...)</option>
-            <option value="Opioid mạnh">Opioid mạnh (Morphine, Fentanyl...)</option>
-            <option value="Phối hợp">Phối hợp nhiều nhóm</option>
-            <option value="Khác">Khác</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Liều lượng / đường dùng</label>
-          <input type="text" id="f_thuocLieu${d}" placeholder="VD: Paracetamol 1g TM x3/ngày">
-        </div>
-      </div>
-
-      <div class="form-row" style="margin-bottom:0;margin-top:8px;">
-        <div class="form-group">
-          <label>Hiệu quả giảm đau</label>
-          <select id="f_thuocHQ${d}">
-            <option value="">Chọn...</option>
-            <option value="Tốt">Tốt — giảm đau rõ rệt</option>
-            <option value="Trung bình">Trung bình — giảm một phần</option>
-            <option value="Kém">Kém — ít hoặc không giảm</option>
-            <option value="Không đánh giá được">Không đánh giá được</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Tác dụng phụ</label>
-          <select id="f_thuocTDP${d}">
-            <option value="">Chọn...</option>
-            <option value="Không có">Không có</option>
-            <option value="Buồn nôn / nôn">Buồn nôn / nôn</option>
-            <option value="Chóng mặt">Chóng mặt</option>
-            <option value="Táo bón">Táo bón</option>
-            <option value="Ngủ gà">Ngủ gà / buồn ngủ</option>
-            <option value="Ngứa">Ngứa</option>
-            <option value="Hạ huyết áp">Hạ huyết áp</option>
-            <option value="Khó thở">Khó thở</option>
-            <option value="Khác">Khác</option>
-          </select>
-        </div>
-      </div>
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:8px;">Thuốc giảm đau sử dụng</div>
+      <div id="thuoc_list_d${d}"></div>
+      <button type="button" id="btn_add_thuoc_d${d}" class="btn btn-sm" style="margin-top:6px;" onclick="addThuocRow(${d})">+ Thêm thuốc</button>
     </div>`).join("")}
   </div>
   <div class="card">
