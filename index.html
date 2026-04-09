@@ -250,4 +250,31 @@
   <script src="./assets/js/questions-config.js"></script>
   <script src="./assets/js/main.js"></script>
 </body>
-</html>
+</html><!-- inline style patch: muc tieu -->
+<style>
+.th-muctieu-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 10px 14px;
+  background: var(--surface-raised, #f7fafc);
+  border-radius: 8px;
+  border: 1px dashed var(--border, #e2e8f0);
+  font-size: 13px;
+}
+.th-muctieu-label { font-weight: 600; color: var(--text, #2d3748); }
+.th-muctieu-input {
+  width: 80px;
+  padding: 4px 8px;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--primary, #1a7a6e);
+  text-align: center;
+  background: var(--surface, #fff);
+}
+.th-muctieu-hint { color: var(--text-muted, #718096); }
+.th-muctieu-saved { color: var(--green, #27ae60); font-size: 12px; font-weight: 600; }
+</style>

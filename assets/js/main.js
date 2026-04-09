@@ -97,7 +97,12 @@ let draftSaveTimer     = null;
 let dashboardPage      = 1;
 const PAGE_SIZE        = 20;
 
-const LOCAL_DRAFT_KEY = "phieu_local_drafts_v3";
+const LOCAL_DRAFT_KEY  = "phieu_local_drafts_v3";
+const MUC_TIEU_KEY     = "phieu_muc_tieu_v1";
+const MUC_TIEU_DEFAULT = 171;
+
+function getMucTieu()    { return parseInt(localStorage.getItem(MUC_TIEU_KEY) || MUC_TIEU_DEFAULT, 10) || MUC_TIEU_DEFAULT; }
+function setMucTieu(n)   { localStorage.setItem(MUC_TIEU_KEY, String(n)); }
 
 // ── Auth ─────────────────────────────────────────────────────
 const SESSION_KEY = "phieu_session_v1";
@@ -812,14 +817,32 @@ function calcTongHopLocal() {
     scope: isAdmin ? "all" : "mine" };
 }
 
+function saveMucTieu(val) {
+  const n = parseInt(val, 10);
+  if (!n || n < 1) return;
+  setMucTieu(n);
+  tongHopCache = null; // re-render với mục tiêu mới
+  loadTongHop();
+  const saved = document.getElementById("muctieu-saved");
+  if (saved) { saved.style.display = "inline"; setTimeout(() => saved.style.display = "none", 2000); }
+}
+
 function reloadTongHop() {
   tongHopCache = null; // xóa cache → force refresh
   loadTongHop();
 }
 
-async function loadTongHop() {
+async function loadTongHop(retryCount = 0) {
   const el = document.getElementById("tonghop-grid");
-  if (el) el.innerHTML = '<div class="tonghop-loading">Đang tải...</div>';
+
+  // Nếu danhSachCache chưa có (đang load) → đợi rồi thử lại tối đa 8 lần
+  if (danhSachCache.length === 0 && retryCount < 8) {
+    if (el) el.innerHTML = '<div class="tonghop-loading">Đang tải dữ liệu...</div>';
+    await new Promise(r => setTimeout(r, 400));
+    return loadTongHop(retryCount + 1);
+  }
+
+  if (el) el.innerHTML = '<div class="tonghop-loading">Đang tính...</div>';
 
   try {
     const timeoutPromise = new Promise((_, reject) =>
@@ -831,7 +854,6 @@ async function loadTongHop() {
     tongHopCache.source = "server";
   } catch (e) {
     console.warn("[loadTongHop] API lỗi:", e.message, "— dùng dữ liệu local");
-    // Fallback: tính từ cache đang có (danhSachCache đã load trước đó)
     tongHopCache = calcTongHopLocal();
   }
   renderTongHop();
@@ -846,8 +868,10 @@ function renderTongHop() {
     return;
   }
 
-  // Thanh tiến độ % hoàn thành
-  const pct = d.tong > 0 ? Math.round(d.hoan_thanh / d.tong * 100) : 0;
+  // Tiến độ dựa trên mục tiêu mẫu
+  const mucTieu = getMucTieu();
+  const pct     = mucTieu > 0 ? Math.min(100, Math.round(d.hoan_thanh / mucTieu * 100)) : 0;
+  const conLai  = Math.max(0, mucTieu - d.hoan_thanh);
 
   // Bảng theo điều tra viên
   const dtvRows = (d.theo_dtv || []).map(dtv => {
@@ -873,39 +897,49 @@ function renderTongHop() {
       <!-- Hàng số liệu chính -->
       <div class="th-stat-row">
         <div class="th-stat-box th-main">
-          <div class="th-num">${d.tong}</div>
-          <div class="th-lbl">Tổng số mẫu</div>
-        </div>
-        <div class="th-stat-box">
-          <div class="th-num th-green">${d.hoan_thanh}</div>
-          <div class="th-lbl">✅ Hoàn thành</div>
+          <div class="th-num">${d.hoan_thanh}<span style="font-size:16px;font-weight:500;color:var(--text-muted)"> / ${mucTieu}</span></div>
+          <div class="th-lbl">🎯 Hoàn thành / Mục tiêu</div>
         </div>
         <div class="th-stat-box">
           <div class="th-num th-amber">${d.dang_dien}</div>
           <div class="th-lbl">⏳ Đang điền</div>
         </div>
         <div class="th-stat-box">
-          <div class="th-num th-muted">${d.moi}</div>
-          <div class="th-lbl">🆕 Chưa điền</div>
+          <div class="th-num th-muted">${d.tong}</div>
+          <div class="th-lbl">📋 Đã thu thập</div>
+        </div>
+        <div class="th-stat-box">
+          <div class="th-num" style="color:${conLai===0?'var(--green,#27ae60)':'var(--primary)'}">${conLai}</div>
+          <div class="th-lbl">${conLai===0?'✅ Đã đủ mẫu':'📌 Còn cần thêm'}</div>
         </div>
       </div>
 
-      <!-- Thanh tiến độ -->
+      <!-- Thanh tiến độ theo mục tiêu -->
       <div class="th-progress-wrap">
         <div class="th-progress-label">
-          <span>Tiến độ hoàn thành toàn nghiên cứu</span>
+          <span>Tiến độ đạt mục tiêu <strong>${mucTieu} mẫu</strong></span>
           <span class="th-pct">${pct}%</span>
         </div>
         <div class="th-progress-bar">
           <div class="th-progress-fill" style="width:${pct}%"></div>
         </div>
         <div class="th-progress-sub">
-        Cập nhật lúc ${now}
-        ${d.source === "server" ? " · <span style='color:var(--green,#27ae60)'>✓ Dữ liệu toàn hệ thống</span>" :
-          d.scope === "all"  ? " · Dữ liệu toàn hệ thống (từ bộ nhớ)" :
-                               " · Chỉ hiển thị phiếu của bạn — admin xem được toàn bộ"}
+          Cập nhật lúc ${now}
+          ${d.source === "server" ? " · <span style='color:var(--green,#27ae60)'>✓ Dữ liệu toàn hệ thống</span>" :
+            d.scope === "all"  ? " · Dữ liệu toàn hệ thống" :
+                                 " · Hiển thị theo quyền tài khoản"}
+        </div>
       </div>
-      </div>
+
+      <!-- Admin: đặt mục tiêu -->
+      ${currentUser?.role === "admin" ? `
+      <div class="th-muctieu-wrap">
+        <span class="th-muctieu-label">🎯 Mục tiêu nghiên cứu:</span>
+        <input class="th-muctieu-input" id="inp-muc-tieu" type="number" min="1" max="9999"
+          value="${mucTieu}" onchange="saveMucTieu(this.value)">
+        <span class="th-muctieu-hint">mẫu</span>
+        <span class="th-muctieu-saved" id="muctieu-saved" style="display:none">✓ Đã lưu</span>
+      </div>` : ""}
 
       <!-- Bảng theo điều tra viên -->
       ${dtvRows ? `
