@@ -101,6 +101,7 @@ let viewMode           = false; // true = chế độ xem (read-only)
 const PAGE_SIZE        = 20;
 
 const LOCAL_DRAFT_KEY  = "phieu_local_drafts_v3";
+const FULL_RECORD_CACHE_KEY = "phieu_full_records_cache_v1";
 const MUC_TIEU_KEY     = "phieu_muc_tieu_v1";
 const MUC_TIEU_DEFAULT = 171;
 
@@ -346,14 +347,58 @@ function hasRemoteRecord(ma) {
   return danhSachCache.some(item => item.ma_phieu === ma);
 }
 
+function getFullRecordCacheMap() {
+  try { return parseJSONSafe(sessionStorage.getItem(FULL_RECORD_CACHE_KEY), {}); }
+  catch { return {}; }
+}
+function setFullRecordCacheMap(map) {
+  try { sessionStorage.setItem(FULL_RECORD_CACHE_KEY, JSON.stringify(map)); }
+  catch {}
+}
+function getCachedFullRecord(ma) {
+  if (!ma) return null;
+  const map = getFullRecordCacheMap();
+  return map[ma]?.data || null;
+}
+function cacheFullRecord(record) {
+  if (!record?.ma_phieu) return;
+  const map = getFullRecordCacheMap();
+  map[record.ma_phieu] = { ts: Date.now(), data: record };
+  const keys = Object.keys(map);
+  if (keys.length > 80) {
+    keys.sort((a, b) => Number(map[b]?.ts || 0) - Number(map[a]?.ts || 0));
+    keys.slice(80).forEach(k => delete map[k]);
+  }
+  setFullRecordCacheMap(map);
+}
+function clearCachedFullRecord(ma) {
+  if (!ma) return;
+  const map = getFullRecordCacheMap();
+  delete map[ma];
+  setFullRecordCacheMap(map);
+}
+async function fetchFullRecordCached(ma, { force = false } = {}) {
+  if (!ma) throw new Error("Thiếu mã phiếu");
+  if (!force) {
+    const cached = getCachedFullRecord(ma);
+    if (cached) return { data: cached, fromCache: true };
+  }
+  const res = await apiGet("get", { ma });
+  const fullData = res?.data || {};
+  const merged = { ...getMergedRecordByMa(ma), ...fullData, ma_phieu: ma };
+  cacheFullRecord(merged);
+  return { data: merged, fromCache: false };
+}
+
 // ── Merged record helpers ────────────────────────────────────
 function getMergedRecordByMa(ma) {
   const remote = danhSachCache.find(item => item.ma_phieu === ma) || null;
+  const cached = getCachedFullRecord(ma);
   let local    = getLocalDraft(ma);
   if (remote && local && !isRecordOwner(remote)) {
     local = null;
   }
-  const merged = { ...(remote || {}), ...((local && local.data) || {}) };
+  const merged = { ...(remote || {}), ...(cached || {}), ...((local && local.data) || {}) };
   merged.ma_phieu   = ma;
   // buoc từ Sheets có thể là datetime object (Sheets bug) — cần parse số thuần
   const parseBuoc = v => {
@@ -473,6 +518,39 @@ function showScreen(name, options = {}) {
   }
 }
 
+function setFooterButtonsForMode() {
+  const btnPrev = document.getElementById("btn-prev");
+  const btnNext = document.getElementById("btn-next");
+  const btnFinish = document.getElementById("btn-finish");
+  const btnUpdate = document.getElementById("btn-update");
+  const btnSaveDraft = document.getElementById("btn-save-draft");
+  if (!btnPrev || !btnNext || !btnFinish) return;
+
+  if (viewMode) {
+    if (btnSaveDraft) btnSaveDraft.style.display = "none";
+    btnPrev.textContent = "← Bước trước";
+    btnNext.textContent = "Tiếp theo →";
+    btnFinish.textContent = "Quay lại danh sách";
+    btnFinish.onclick = () => showScreen("dash");
+    if (btnUpdate) btnUpdate.style.display = "none";
+    return;
+  }
+
+  if (btnSaveDraft) btnSaveDraft.style.display = "inline-flex";
+  btnPrev.textContent = "← Trước";
+  btnNext.textContent = "Lưu & Tiếp theo →";
+  btnFinish.textContent = "Lưu & Hoàn thành";
+  btnFinish.onclick = finishForm;
+}
+
+function setFooterStatusTone(mode = "success") {
+  const dot = document.querySelector("#footer-info .footer-status-dot");
+  if (!dot) return;
+  if (mode === "neutral") dot.style.background = "var(--slate-400)";
+  else if (mode === "warning") dot.style.background = "var(--amber-600)";
+  else dot.style.background = "var(--green-500)";
+}
+
 function showStep(n) {
   currentStep = n;
   ["step1", "step2", "step3"].forEach((id, i) => {
@@ -483,25 +561,25 @@ function showStep(n) {
       (i + 1 === n ? " active" : i + 1 < n ? " done" : "");
   });
 
+  setFooterButtonsForMode();
+
   if (viewMode) {
-    // Chế độ xem: vô hiệu hoá tất cả input, ẩn hết nút lưu
     document.getElementById("btn-prev").style.display   = n > 1 ? "inline-block" : "none";
     document.getElementById("btn-next").style.display   = n < 3 ? "inline-block" : "none";
-    document.getElementById("btn-finish").style.display = "none";
+    document.getElementById("btn-finish").style.display = n === 3 ? "inline-block" : "none";
     const btnUpdate = document.getElementById("btn-update");
     if (btnUpdate) btnUpdate.style.display = "none";
-    // Disable all inputs in current step
     setTimeout(() => {
       document.querySelectorAll("#step1 input,#step1 select,#step1 textarea,#step2 input,#step2 select,#step2 textarea,#step3 input,#step3 select,#step3 textarea").forEach(el => {
         el.disabled = true;
-        el.style.opacity = "0.7";
+        el.style.opacity = "0.72";
       });
     }, 50);
-    updateFooterStatus("Chế độ xem — không thể chỉnh sửa");
+    updateFooterStatus("Chỉ xem — dùng các nút để chuyển bước");
+    setFooterStatusTone("neutral");
     return;
   }
 
-  // [FIX-UPDATE] Phiếu đã hoàn thành (buoc>=3): hiện nút "Lưu cập nhật bước này" thay cho luồng 3 bước
   const isCompleted = currentHighestStep >= 3;
   document.getElementById("btn-prev").style.display   = n > 1 ? "inline-block" : "none";
   document.getElementById("btn-next").style.display   = (!isCompleted && n < 3) ? "inline-block" : "none";
@@ -514,12 +592,14 @@ function showStep(n) {
       ? `Nháp gần nhất: ${formatWhen(local.updated_at)}`
       : "Tự động lưu nháp khi đang nhập"
   );
+  setFooterStatusTone("success");
 }
 
 // [FIX#7] jumpToStep: không cho nhảy tiến quá bước đã validate
 // Chỉ cho phép nhảy về bước đã qua hoặc bước tiếp theo liền kề
 function jumpToStep(step) {
   const target = Math.max(1, Math.min(3, Number(step || 1)));
+  if (viewMode) return showStep(target);
   if (target > currentStep) {
     // Muốn tiến: phải validate bước hiện tại trước
     const errors = validateStep(currentStep);
@@ -600,6 +680,7 @@ async function finishForm() {
       showScreen("dash");
       await loadDanhSach();
       // Sau khi server cache đã có bản ghi này, mới xóa draft local
+      cacheFullRecord({ ...getMergedRecordByMa(savedMa), ...(getLocalDraft(savedMa)?.data || {}), ma_phieu: savedMa });
       const draft = getLocalDraft(savedMa);
       if (draft && draft.synced && Number(draft.buoc || 0) >= 3 && hasRemoteRecord(savedMa)) {
         removeLocalDraft(savedMa);
@@ -830,8 +911,8 @@ function saveLocalProgress(showMessage = false) {
 
 function markLocalSynced() {
   const existing = getLocalDraft(currentMaPhieu) || {};
-  // [FIX-OVERWRITE] Chỉ update bước hiện tại, giữ nguyên data các bước khác
   const currentStepData = collectStep(currentStep);
+  const mergedData = { ...(existing.data || {}), ...currentStepData, ma_phieu: currentMaPhieu };
   upsertLocalDraft({
     ...existing,
     ma_phieu:   currentMaPhieu,
@@ -840,8 +921,9 @@ function markLocalSynced() {
     updated_at: new Date().toISOString(),
     local_only: false, synced: true,
     user:       getCurrentUserName(),
-    data: { ...(existing.data || {}), ...currentStepData, ma_phieu: currentMaPhieu },
+    data:       mergedData,
   });
+  cacheFullRecord({ ...getMergedRecordByMa(currentMaPhieu), ...mergedData, ma_phieu: currentMaPhieu });
 }
 
 function bindAutosave() {
@@ -1116,11 +1198,10 @@ function renderTongHop() {
 
 function renderDashboard() {
   const allRecords = getManagedRecords();
-  const myName = getCurrentUserName();
 
   const normalizedQuery = dashboardQuery.trim().toLowerCase();
   const filtered = allRecords.filter(record => {
-    const hay = `${record.ma_phieu || ""} ${record.ho_ten || ""} ${record.so_ho_so || ""} ${record.dieu_tra_vien || ""}`.toLowerCase();
+    const hay = `${record.ma_phieu || ""} ${record.ho_ten || ""} ${record.so_ho_so || ""} ${record.dieu_tra_vien || ""} ${record.chan_doan || ""} ${record.loai_pt || ""}`.toLowerCase();
     const matchQ = !normalizedQuery || hay.includes(normalizedQuery);
     const statusText = getRecordStatus(record).text;
     const matchF = dashboardFilter === "all"
@@ -1151,32 +1232,37 @@ function renderDashboard() {
     const status = getRecordStatus(record);
     const dtv = record.dieu_tra_vien || record.user || "";
     const isOwner = isRecordOwner(record);
-    const actionText = (record.buoc || 0) >= 3 ? "Cập nhật" : "Tiếp tục";
     const duplicates = findDuplicateRecords(record, record.ma_phieu);
+    const detailText = [record.chan_doan, record.loai_pt, record.vung_pt].filter(Boolean).join(" · ");
+    const metaParts = [];
+    if (record.so_ho_so) metaParts.push(`BN ${escapeHtml(record.so_ho_so)}`);
+    if (dtv) metaParts.push(`Người tạo ${escapeHtml(dtv)}`);
+    if (record.updated_at) metaParts.push(`Cập nhật ${escapeHtml(formatWhen(record.updated_at))}`);
     return `
-      <div class="phieu-item">
-        <div class="phieu-head">
-          <div>
+      <div class="phieu-item phieu-compact ${isOwner ? "is-mine" : "is-other"}">
+        <div class="phieu-main">
+          <div class="phieu-topline">
             <div class="phieu-name">${escapeHtml(record.ho_ten || "(Chưa có tên bệnh nhân)")}</div>
-            <div class="phieu-sub">Mã phiếu: ${escapeHtml(record.ma_phieu || "")} · ${record.so_ho_so ? "Mã BN: " + escapeHtml(record.so_ho_so) + " · " : ""}${record.created_at ? "Tạo: " + escapeHtml(formatWhen(record.created_at)) + " · " : ""}${record.updated_at ? "Cập nhật: " + escapeHtml(formatWhen(record.updated_at)) : "Chưa có thời gian"}</div>
+            <div class="phieu-chipline">
+              <span class="badge ${status.cls}">${escapeHtml(status.text)}</span>
+              <span class="badge ${isOwner ? "badge-green" : "badge-gray"}">${isOwner ? "Của tôi" : "Người khác"}</span>
+            </div>
           </div>
-          <div class="phieu-actions">
-            <button class="btn btn-sm" onclick="viewRecordByMa('${escapeHtml(record.ma_phieu)}')">👁 Xem</button>
-            ${isOwner ? `<button class="btn btn-sm btn-primary" onclick="openRecordByMa('${escapeHtml(record.ma_phieu)}')">${actionText}</button>` : ""}
-            ${isOwner ? `<button class="btn btn-sm btn-danger" onclick="confirmDeleteRecord('${escapeHtml(record.ma_phieu)}')">🗑 Xóa</button>` : ""}
-            ${record.has_local && isOwner ? `<button class="btn btn-sm" onclick="deleteLocalDraftOnly('${escapeHtml(record.ma_phieu)}')">Xóa nháp máy</button>` : ""}
+          <div class="phieu-meta-line">${metaParts.join('<span class="sep">•</span>') || 'Chưa có thông tin phụ'}</div>
+          <div class="phieu-detail-line">${escapeHtml(detailText || (record.ma_phieu ? `Mã phiếu ${record.ma_phieu}` : 'Chưa có chẩn đoán / loại phẫu thuật'))}</div>
+          <div class="phieu-bottomline">
+            <span class="badge badge-blue">${escapeHtml(getStepLabel(record))}</span>
+            ${duplicates.length ? `<span class="badge badge-amber" title="Có phiếu cùng mã BN và ngày nhập viện">Có thể trùng ${duplicates.length}</span>` : ""}
+            ${record.local_only ? `<span class="badge badge-gray">Chưa gửi lên hệ thống</span>` : ""}
           </div>
         </div>
-        <div class="phieu-meta">
-          <span class="badge ${status.cls}">${escapeHtml(status.text)}</span>
-          <span class="badge badge-blue">${escapeHtml(getStepLabel(record))}</span>
-          <span class="badge ${isOwner ? "badge-green" : "badge-gray"}">${isOwner ? "Của tôi" : "Phiếu người khác"}</span>
-          ${dtv ? `<span class="badge badge-gray">👤 ${escapeHtml(dtv)}</span>` : ""}
-          ${record.updated_by ? `<span class="badge badge-blue" title="Người sửa gần nhất">✏️ ${escapeHtml(record.updated_by)}</span>` : ""}
-          ${record.gioi_tinh ? `<span class="badge badge-gray">${escapeHtml(record.gioi_tinh)}</span>` : ""}
-          ${record.loai_pt ? `<span class="badge badge-amber">${escapeHtml(record.loai_pt)}</span>` : ""}
-          ${duplicates.length ? `<span class="badge badge-amber" title="Có phiếu cùng mã BN và ngày nhập viện">Trùng ${duplicates.length}</span>` : ""}
-          ${record.local_only ? `<span class="badge badge-gray">Chưa gửi lên hệ thống</span>` : ""}
+        <div class="phieu-side">
+          <div class="phieu-code">${escapeHtml(record.ma_phieu || "")}</div>
+          <div class="phieu-actions compact-actions">
+            ${isOwner ? `<button class="btn btn-sm btn-primary" onclick="openRecordByMa('${escapeHtml(record.ma_phieu)}')">Mở</button>` : `<button class="btn btn-sm" onclick="viewRecordByMa('${escapeHtml(record.ma_phieu)}')">Xem</button>`}
+            ${isOwner ? `<button class="btn btn-sm btn-danger" onclick="confirmDeleteRecord('${escapeHtml(record.ma_phieu)}')">Xóa</button>` : ""}
+            ${record.has_local && isOwner ? `<button class="btn btn-sm" onclick="deleteLocalDraftOnly('${escapeHtml(record.ma_phieu)}')">Xóa nháp</button>` : ""}
+          </div>
         </div>
       </div>`;
   }).join("");
@@ -1189,21 +1275,23 @@ function renderDashboard() {
     </div>` : filtered.length > 0 ? `<div class="page-info-simple">${filtered.length} phiếu</div>` : "";
 
   document.getElementById("phieu-list").innerHTML = `
-    <div class="dashboard-tools">
-      <div class="dashboard-search"><input id="dash-search" type="search" placeholder="Tìm theo tên, mã phiếu, số hồ sơ, người tạo..." value="${escapeHtml(dashboardQuery)}"></div>
-      <div class="segmented" id="dash-owner-segmented">
-        <button data-owner="all" class="${dashboardOwnerFilter === "all" ? "active" : ""}">Tất cả</button>
-        <button data-owner="mine" class="${dashboardOwnerFilter === "mine" ? "active" : ""}">Của tôi</button>
-        <button data-owner="others" class="${dashboardOwnerFilter === "others" ? "active" : ""}">Người khác</button>
-      </div>
-      <div class="segmented" id="dash-segmented">
-        <button data-filter="all" class="${dashboardFilter === "all" ? "active" : ""}">Mọi trạng thái</button>
-        <button data-filter="draft" class="${dashboardFilter === "draft" ? "active" : ""}">Phiếu mới</button>
-        <button data-filter="progress" class="${dashboardFilter === "progress" ? "active" : ""}">Đang điền</button>
-        <button data-filter="done" class="${dashboardFilter === "done" ? "active" : ""}">Hoàn thành</button>
+    <div class="dashboard-tools dashboard-tools-compact">
+      <div class="dashboard-search"><input id="dash-search" type="search" placeholder="Tìm theo tên, mã BN, mã phiếu, người tạo..." value="${escapeHtml(dashboardQuery)}"></div>
+      <div class="dashboard-filter-row">
+        <div class="segmented" id="dash-owner-segmented">
+          <button data-owner="all" class="${dashboardOwnerFilter === "all" ? "active" : ""}">Tất cả</button>
+          <button data-owner="mine" class="${dashboardOwnerFilter === "mine" ? "active" : ""}">Của tôi</button>
+          <button data-owner="others" class="${dashboardOwnerFilter === "others" ? "active" : ""}">Người khác</button>
+        </div>
+        <div class="segmented" id="dash-segmented">
+          <button data-filter="all" class="${dashboardFilter === "all" ? "active" : ""}">Mọi trạng thái</button>
+          <button data-filter="draft" class="${dashboardFilter === "draft" ? "active" : ""}">Phiếu mới</button>
+          <button data-filter="progress" class="${dashboardFilter === "progress" ? "active" : ""}">Đang điền</button>
+          <button data-filter="done" class="${dashboardFilter === "done" ? "active" : ""}">Hoàn thành</button>
+        </div>
       </div>
     </div>
-    <div class="phieu-list-wrap">${cards || '<div class="empty">Không có phiếu phù hợp bộ lọc hiện tại.</div>'}</div>
+    <div class="phieu-list-wrap compact-list">${cards || '<div class="empty">Không có phiếu phù hợp bộ lọc hiện tại.</div>'}</div>
     ${paginationHtml}
   `;
 
@@ -1417,25 +1505,27 @@ function updateModeBanner(record) {
   const isOwner = isRecordOwner(record);
 
   if (viewMode) {
+    const ownerText = isOwner ? "Bạn đang xem lại phiếu của mình" : `Đang xem phiếu của ${dtv || "người khác"}`;
     const editBtn = isOwner
-      ? `<button class="btn btn-sm btn-primary" style="margin-left:auto;" onclick="switchToEditMode()">✏ Sửa phiếu</button>`
+      ? `<button class="btn btn-sm btn-primary" style="margin-left:auto;" onclick="switchToEditMode()">Chuyển sang chỉnh sửa</button>`
       : "";
     banner.innerHTML = `
-      <strong>${record?.ma_phieu ? "Phiếu " + escapeHtml(record.ma_phieu) : ""}</strong>
-      · <span class="badge ${status.cls}">${escapeHtml(status.text)}</span>
-      <span class="sub">Chế độ xem — chỉ đọc</span>
-      ${editBtn}`;
-    banner.style.background = "var(--surface-alt, #f0f4f8)";
-    banner.style.border     = "1.5px solid var(--border)";
+      <div class="mode-banner-row">
+        <div>
+          <strong>${record?.ma_phieu ? "Phiếu " + escapeHtml(record.ma_phieu) : "Phiếu"}</strong>
+          · <span class="badge ${status.cls}">${escapeHtml(status.text)}</span>
+          <span class="sub">${escapeHtml(ownerText)} · Chỉ đọc, chỉ có thể chuyển bước để xem nội dung</span>
+        </div>
+        ${editBtn}
+      </div>`;
+    banner.classList.add("is-readonly");
     return;
   }
 
   const sourceText = record?.local_only
     ? "Đang mở nháp lưu trên máy"
-    : !isOwner && record?.ma_phieu ? `Phiếu do ${dtv || "người khác"} tạo — bạn chỉ có thể xem`
-    : record?.ma_phieu ? "Có thể tiếp tục hoặc chỉnh sửa để cập nhật" : "Phiếu mới, có tự lưu nháp trên máy";
-  banner.style.background = "";
-  banner.style.border     = "";
+    : !isOwner && record?.ma_phieu ? `Phiếu do ${dtv || "người khác"} tạo — bạn chỉ có thể xem` : record?.ma_phieu ? "Có thể tiếp tục hoặc chỉnh sửa để cập nhật" : "Phiếu mới, có tự lưu nháp trên máy";
+  banner.classList.remove("is-readonly");
   banner.innerHTML = `<strong>${record?.ma_phieu ? "Phiếu " + escapeHtml(record.ma_phieu) : "Phiếu mới"}</strong> · <span class="badge ${status.cls}">${escapeHtml(status.text)}</span><span class="sub">${escapeHtml(sourceText)}${record?.updated_at ? " · cập nhật gần nhất: " + escapeHtml(formatWhen(record.updated_at)) : ""}</span>`;
 }
 
@@ -1454,6 +1544,7 @@ function switchToEditMode() {
     el.style.opacity = "";
   });
   updateModeBanner(record);
+  setFooterButtonsForMode();
   showStep(currentStep); // re-render buttons
 }
 
