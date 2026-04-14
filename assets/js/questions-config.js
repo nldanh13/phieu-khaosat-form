@@ -93,3 +93,57 @@ window.HL_ITEMS = [
   "Khả năng vận động sau mổ",
   "Kết quả phẫu thuật tổng thể",
 ];
+
+// ── AIS-5 (Athens Insomnia Scale — 5 items) ──────────────────
+// Thang điểm 0–3 mỗi câu; tổng 0–15; >4 = rối loạn giấc ngủ
+window.AIS5_ITEMS = [
+  {
+    id: 1,
+    label: "Khởi phát giấc ngủ",
+    desc: "Thời gian để ngủ sau khi tắt đèn",
+    opts: ["Không vấn đề (0)", "Chậm nhẹ (1)", "Chậm rõ (2)", "Rất chậm / không ngủ (3)"]
+  },
+  {
+    id: 2,
+    label: "Thức giấc giữa đêm",
+    desc: "Tỉnh giấc nhiều lần trong đêm",
+    opts: ["Không vấn đề (0)", "Nhẹ (1)", "Đáng kể (2)", "Nghiêm trọng / không ngủ (3)"]
+  },
+  {
+    id: 3,
+    label: "Thức dậy sớm",
+    desc: "Dậy sớm hơn mong muốn",
+    opts: ["Không (0)", "Hơi sớm (1)", "Sớm rõ (2)", "Rất sớm / không ngủ (3)"]
+  },
+  {
+    id: 4,
+    label: "Tổng thời gian ngủ",
+    desc: "Cảm nhận về thời lượng ngủ",
+    opts: ["Đủ (0)", "Hơi thiếu (1)", "Thiếu rõ (2)", "Rất thiếu / không ngủ (3)"]
+  },
+  {
+    id: 5,
+    label: "Chất lượng giấc ngủ",
+    desc: "Độ sâu và sự thoải mái của giấc ngủ",
+    opts: ["Tốt (0)", "Hơi kém (1)", "Kém (2)", "Rất kém / không ngủ (3)"]
+  },
+];
+
+// ── Nguyên nhân lo âu trước phẫu thuật (multi-select) ────────
+window.NGUYEN_NHAN_LO_AU = [
+  "Sợ đau sau mổ",
+  "Sợ biến chứng hoặc tử vong",
+  "Lo ngại kết quả phẫu thuật",
+  "Lo về chi phí điều trị",
+  "Lo về mất khả năng lao động",
+  "Lý do gia đình – xã hội khác",
+];
+
+// ── Nguyên nhân rối loạn giấc ngủ (multi-select) ─────────────
+window.NGUYEN_NHAN_RLGN = [
+  "Đau vùng tổn thương",
+  "Tiếng ồn bệnh viện",
+  "Lo lắng về phẫu thuật",
+  "Môi trường nằm viện không quen",
+  "Triệu chứng khác (tiểu đêm, khó thở...)",
+];

@@ -95,6 +95,8 @@ let dashboardFilter    = "all";
 let dashboardQuery     = "";
 let draftSaveTimer     = null;
 let dashboardPage      = 1;
+let formDirty          = false; // true khi user đã thay đổi ít nhất 1 trường
+let viewMode           = false; // true = chế độ xem (read-only)
 const PAGE_SIZE        = 20;
 
 const LOCAL_DRAFT_KEY  = "phieu_local_drafts_v3";
@@ -320,18 +322,37 @@ function getManagedRecords() {
   );
 }
 
+// Kiểm tra phiếu đã điền đủ các trường bắt buộc chưa
+function isRecordComplete(record) {
+  if ((record.buoc || 0) < 3) return false;
+  const required = [
+    // Bước 1
+    "ho_ten", "so_ho_so", "ngay_sinh", "gioi_tinh", "ngay_nhap_vien", "loai_pt", "vo_cam",
+    // Bước 2
+    "hads_1", "psqi1",
+    // Bước 3
+    "ngay_pt_thuc",
+  ];
+  return required.every(f => {
+    const v = record[f];
+    return v !== undefined && v !== null && v !== "";
+  });
+}
+
 // Trạng thái phiếu:
-// - "Hoàn thành" = đã lưu đủ 3 bước (buoc >= 3) và đã sync lên server
-// - "Phiếu mới"  = chưa điền trường nào (buoc = 0 hoặc 1 và chỉ là nháp chưa gửi)
-// - "Nháp máy"   = local_only (chưa bao giờ lên server)
-// - "Chưa đồng bộ" = có thay đổi chưa sync
-// - "Đang điền"  = còn lại (đã có trên server nhưng chưa đủ 3 bước)
+// - "Hoàn thành"    = đã lưu đủ 3 bước VÀ điền đủ các trường bắt buộc
+// - "Đang thực hiện"= buoc >= 3 nhưng còn thiếu trường
+// - "Phiếu mới"     = chưa điền trường nào
+// - "Nháp trên máy" = local_only
+// - "Chưa đồng bộ"  = có thay đổi chưa sync
+// - "Đang điền"     = còn lại
 function getRecordStatus(record) {
-  if (record.local_only && (record.buoc || 0) <= 1) return { text: "Phiếu mới",      cls: "badge-gray"   };
-  if (record.local_only)                            return { text: "Nháp trên máy",   cls: "badge-purple" };
-  if (record.has_local && !record.synced)           return { text: "Chưa đồng bộ",    cls: "badge-purple" };
-  if ((record.buoc || 0) >= 3)                      return { text: "Hoàn thành",      cls: "badge-green"  };
-  if ((record.buoc || 0) <= 1 && !record.has_local) return { text: "Phiếu mới",      cls: "badge-gray"   };
+  if (record.local_only && (record.buoc || 0) <= 1) return { text: "Phiếu mới",       cls: "badge-gray"   };
+  if (record.local_only)                            return { text: "Nháp trên máy",    cls: "badge-purple" };
+  if (record.has_local && !record.synced)           return { text: "Chưa đồng bộ",     cls: "badge-purple" };
+  if (isRecordComplete(record))                     return { text: "Hoàn thành",        cls: "badge-green"  };
+  if ((record.buoc || 0) >= 3)                      return { text: "Đang thực hiện",    cls: "badge-amber"  };
+  if ((record.buoc || 0) <= 1 && !record.has_local) return { text: "Phiếu mới",        cls: "badge-gray"   };
   return { text: "Đang điền", cls: "badge-amber" };
 }
 
@@ -357,6 +378,8 @@ function showScreen(name, options = {}) {
     currentRecordSource = options.source || (record ? (record.local_only ? "local" : "remote") : "new");
     currentMaPhieu      = record?.ma_phieu || genMaPhieu();
     currentHighestStep  = Math.max(Number(record?.buoc || 0), 1);
+    formDirty           = false; // reset khi mở form mới
+    viewMode            = options.viewMode || false;
     buildStep1(); buildStep2(); buildStep3();
     // Khởi tạo 1 hàng thuốc trống cho mỗi ngày
     [1, 2, 3].forEach(d => applyThuocNgay(d, ""));
@@ -402,6 +425,25 @@ function showStep(n) {
     document.getElementById(id).className = "step-item" +
       (i + 1 === n ? " active" : i + 1 < n ? " done" : "");
   });
+
+  if (viewMode) {
+    // Chế độ xem: vô hiệu hoá tất cả input, ẩn hết nút lưu
+    document.getElementById("btn-prev").style.display   = n > 1 ? "inline-block" : "none";
+    document.getElementById("btn-next").style.display   = n < 3 ? "inline-block" : "none";
+    document.getElementById("btn-finish").style.display = "none";
+    const btnUpdate = document.getElementById("btn-update");
+    if (btnUpdate) btnUpdate.style.display = "none";
+    // Disable all inputs in current step
+    setTimeout(() => {
+      document.querySelectorAll("#step1 input,#step1 select,#step1 textarea,#step2 input,#step2 select,#step2 textarea,#step3 input,#step3 select,#step3 textarea").forEach(el => {
+        el.disabled = true;
+        el.style.opacity = "0.7";
+      });
+    }, 50);
+    updateFooterStatus("Chế độ xem — không thể chỉnh sửa");
+    return;
+  }
+
   // [FIX-UPDATE] Phiếu đã hoàn thành (buoc>=3): hiện nút "Lưu cập nhật bước này" thay cho luồng 3 bước
   const isCompleted = currentHighestStep >= 3;
   document.getElementById("btn-prev").style.display   = n > 1 ? "inline-block" : "none";
@@ -440,7 +482,7 @@ async function nextStep()  {
     return;
   }
   // [FIX-SPEED] Lưu local + chuyển bước NGAY — không chờ server
-  saveLocalProgress(false);
+  if (formDirty) saveLocalProgress(false);
   currentHighestStep = Math.max(Number(currentHighestStep || 0), Number(currentStep || 0), 1);
   const stepToSave = currentStep; // capture trước khi showStep thay đổi currentStep
   showStep(Math.min(3, currentStep + 1));
@@ -527,7 +569,9 @@ const STEP2_FIELDS = new Set([
   "psqi1","psqi2","psqi3","psqi4","psqi5a","psqi6",
   "psqi_5_0","psqi_5_1","psqi_5_2","psqi_5_3","psqi_5_4",
   "psqi_5_5","psqi_5_6","psqi_5_7","psqi_5_8",
-  "psqi7","psqi8","psqi9","psqi5j_text"
+  "psqi7","psqi8","psqi9","psqi5j_text",
+  "ais_1","ais_2","ais_3","ais_4","ais_5","ais_tong","ais_phanloai",
+  "nguyen_nhan_lo_au","nguyen_nhan_rlgn",
 ]);
 const STEP3_FIELDS = new Set([
   "ngay_pt_thuc","tg_pt","pp_pt_thuc","vo_cam_thuc","mat_mau","truyen_mau",
@@ -736,6 +780,7 @@ function bindAutosave() {
   const handler = event => {
     if (!screen.classList.contains("active")) return;
     if (!event.target.closest("#screen-new")) return;
+    formDirty = true; // đánh dấu có thay đổi
     clearTimeout(draftSaveTimer);
     draftSaveTimer = setTimeout(() => saveLocalProgress(false), 500);
   };
@@ -797,10 +842,12 @@ function switchDashTab(tab) {
 function calcTongHopLocal() {
   const allRecords = getManagedRecords();
   let tong = 0, hoan_thanh = 0, dang_dien = 0, moi = 0;
-  const dtvMap = {};
+  const dtvMap  = {};
+  const loaiMap = {};
   allRecords.forEach(r => {
     tong++;
-    const buoc = Number(r.buoc || 0);
+    const buoc   = Number(r.buoc || 0);
+    const loaiPT = String(r.loai_pt || "").trim();
     if (buoc >= 3)      hoan_thanh++;
     else if (buoc >= 2) dang_dien++;
     else                moi++;
@@ -810,13 +857,16 @@ function calcTongHopLocal() {
       dtvMap[dtv].tong++;
       if (buoc >= 3) dtvMap[dtv].hoan_thanh++;
     }
+    if (loaiPT) {
+      if (!loaiMap[loaiPT]) loaiMap[loaiPT] = { ten: loaiPT, tong: 0, hoan_thanh: 0 };
+      loaiMap[loaiPT].tong++;
+      if (buoc >= 3) loaiMap[loaiPT].hoan_thanh++;
+    }
   });
-  const theo_dtv = Object.values(dtvMap).sort((a, b) => b.tong - a.tong);
-  const isAdmin  = currentUser?.role === "admin";
-  return { tong, hoan_thanh, dang_dien, moi, theo_dtv,
-    source: "local",
-    scope: isAdmin ? "all" : "mine",
-    apiUnavailable: true };
+  const theo_dtv    = Object.values(dtvMap).sort((a, b) => b.tong - a.tong);
+  const theo_loai_pt = Object.values(loaiMap).sort((a, b) => b.tong - a.tong);
+  return { tong, hoan_thanh, dang_dien, moi, theo_dtv, theo_loai_pt,
+    source: "local", scope: "all", apiUnavailable: true };
 }
 
 function saveMucTieu(val) {
@@ -890,6 +940,17 @@ function renderTongHop() {
     </tr>`;
   }).join("");
 
+  // Bảng theo loại phẫu thuật
+  const loaiPTRows = (d.theo_loai_pt || []).map(item => {
+    const pct2 = d.tong > 0 ? Math.round(item.tong / d.tong * 100) : 0;
+    return `<tr>
+      <td>${escapeHtml(item.ten)}</td>
+      <td class="tc">${item.tong}</td>
+      <td class="tc th-green">${item.hoan_thanh}</td>
+      <td class="tc">${pct2}%</td>
+    </tr>`;
+  }).join("");
+
   const now = new Date().toLocaleString("vi-VN", { hour:"2-digit", minute:"2-digit", day:"2-digit", month:"2-digit" });
   el.innerHTML = `
     <div class="tonghop-wrap">
@@ -932,15 +993,14 @@ function renderTongHop() {
         </div>
       </div>
 
-      <!-- Admin: đặt mục tiêu -->
-      ${currentUser?.role === "admin" ? `
+      <!-- Đặt mục tiêu — mở cho tất cả user -->
       <div class="th-muctieu-wrap">
         <span class="th-muctieu-label">🎯 Mục tiêu nghiên cứu:</span>
         <input class="th-muctieu-input" id="inp-muc-tieu" type="number" min="1" max="9999"
           value="${mucTieu}" onchange="saveMucTieu(this.value)">
         <span class="th-muctieu-hint">mẫu</span>
         <span class="th-muctieu-saved" id="muctieu-saved" style="display:none">✓ Đã lưu</span>
-      </div>` : ""}
+      </div>
 
       <!-- Bảng theo điều tra viên -->
       ${dtvRows ? `
@@ -960,6 +1020,23 @@ function renderTongHop() {
         </table>
       </div>` : '<div class="th-empty">Chưa có dữ liệu điều tra viên.</div>'}
 
+      <!-- Bảng theo loại phẫu thuật -->
+      ${loaiPTRows ? `
+      <div class="th-section-title" style="margin-top:18px;">📊 Phân bố loại phẫu thuật</div>
+      <div class="th-table-wrap">
+        <table class="th-table">
+          <thead>
+            <tr>
+              <th>Loại phẫu thuật</th>
+              <th>Tổng</th>
+              <th>Hoàn thành</th>
+              <th>% / tổng</th>
+            </tr>
+          </thead>
+          <tbody>${loaiPTRows}</tbody>
+        </table>
+      </div>` : ""}
+
       <div style="text-align:right;margin-top:10px;">
         <button class="btn btn-sm" onclick="reloadTongHop()">↻ Làm mới</button>
       </div>
@@ -968,25 +1045,18 @@ function renderTongHop() {
 }
 
 function renderDashboard() {
-  // "Phiếu của tôi": chỉ hiện phiếu thuộc về user đang đăng nhập
+  // Tất cả user đều thấy toàn bộ phiếu
   const allRecords = getManagedRecords();
   const myName     = currentUser?.name || currentUser?.username || "";
-  const isAdmin    = currentUser?.role === "admin";
-  const records    = isAdmin
-    ? allRecords
-    : allRecords.filter(r => {
-        const dtv  = String(r.dieu_tra_vien || r.user || "").trim();
-        const owner = String(r.created_by || dtv).trim();
-        return dtv === myName || owner === myName;
-      });
+
   const normalizedQuery = dashboardQuery.trim().toLowerCase();
-  const filtered        = records.filter(record => {
+  const filtered        = allRecords.filter(record => {
     const hay    = `${record.ma_phieu || ""} ${record.ho_ten || ""} ${record.so_ho_so || ""}`.toLowerCase();
     const matchQ = !normalizedQuery || hay.includes(normalizedQuery);
     const matchF = dashboardFilter === "all"
       || (dashboardFilter === "draft"    && getRecordStatus(record).text === "Phiếu mới")
       || (dashboardFilter === "progress" && !record.local_only && (record.buoc || 0) < 3)
-      || (dashboardFilter === "done"     && (record.buoc || 0) >= 3);
+      || (dashboardFilter === "done"     && getRecordStatus(record).text === "Hoàn thành");
     return matchQ && matchF;
   });
 
@@ -996,17 +1066,17 @@ function renderDashboard() {
   const pageRecords = filtered.slice(pageStart, pageStart + PAGE_SIZE);
 
   document.getElementById("stat-grid").innerHTML = `
-    <div class="stat-card"><div class="stat-num">${records.length}</div><div class="stat-lbl">Tổng phiếu quản lý</div></div>
-    <div class="stat-card"><div class="stat-num">${records.filter(r => getRecordStatus(r).text === "Phiếu mới").length}</div><div class="stat-lbl">Phiếu mới</div></div>
-    <div class="stat-card"><div class="stat-num">${records.filter(r => getRecordStatus(r).text === "Đang điền").length}</div><div class="stat-lbl">Đang điền</div></div>
-    <div class="stat-card"><div class="stat-num">${records.filter(r => getRecordStatus(r).text === "Hoàn thành").length}</div><div class="stat-lbl">Hoàn thành</div></div>
+    <div class="stat-card"><div class="stat-num">${allRecords.length}</div><div class="stat-lbl">Tổng phiếu</div></div>
+    <div class="stat-card"><div class="stat-num">${allRecords.filter(r => getRecordStatus(r).text === "Phiếu mới").length}</div><div class="stat-lbl">Phiếu mới</div></div>
+    <div class="stat-card"><div class="stat-num">${allRecords.filter(r => r.buoc > 0 && r.buoc < 3).length}</div><div class="stat-lbl">Đang điền</div></div>
+    <div class="stat-card"><div class="stat-num">${allRecords.filter(r => getRecordStatus(r).text === "Hoàn thành").length}</div><div class="stat-lbl">Hoàn thành</div></div>
   `;
 
-  const isAdmin = currentUser?.role === "admin";
   const cards = pageRecords.map(record => {
-    const status     = getRecordStatus(record);
+    const status  = getRecordStatus(record);
+    const dtv     = record.dieu_tra_vien || record.user || "";
+    const isOwner = dtv === myName || !dtv;
     const actionText = (record.buoc || 0) >= 3 ? "Cập nhật" : "Tiếp tục";
-    const dtv        = record.dieu_tra_vien || record.user || "";
     return `
       <div class="phieu-item">
         <div class="phieu-head">
@@ -1015,9 +1085,10 @@ function renderDashboard() {
             <div class="phieu-sub">Mã phiếu: ${escapeHtml(record.ma_phieu || "")} · ${record.so_ho_so ? "Mã BN: " + escapeHtml(record.so_ho_so) + " · " : ""}${record.updated_at ? "Cập nhật: " + escapeHtml(formatWhen(record.updated_at)) : "Chưa có thời gian"}</div>
           </div>
           <div class="phieu-actions">
-            <button class="btn btn-sm btn-primary" onclick="openRecordByMa('${escapeHtml(record.ma_phieu)}')">${actionText}</button>
+            <button class="btn btn-sm" onclick="viewRecordByMa('${escapeHtml(record.ma_phieu)}')">👁 Xem</button>
+            ${isOwner ? `<button class="btn btn-sm btn-primary" onclick="openRecordByMa('${escapeHtml(record.ma_phieu)}')">${actionText}</button>` : ""}
+            ${isOwner ? `<button class="btn btn-sm btn-danger" onclick="confirmDeleteRecord('${escapeHtml(record.ma_phieu)}')">🗑 Xóa</button>` : ""}
             ${record.has_local ? `<button class="btn btn-sm" onclick="deleteLocalDraftOnly('${escapeHtml(record.ma_phieu)}')">Xóa nháp máy</button>` : ""}
-            ${isAdmin ? `<button class="btn btn-sm btn-danger" onclick="deleteRecord('${escapeHtml(record.ma_phieu)}')">🗑 Xóa</button>` : ""}
           </div>
         </div>
         <div class="phieu-meta">
@@ -1123,15 +1194,51 @@ function deleteLocalDraftOnly(ma) {
   renderDashboard();
 }
 
-// Xóa phiếu hoàn toàn (admin only) — local + server
+// Popup xác nhận xóa — yêu cầu gõ "Delete"
+function confirmDeleteRecord(ma) {
+  // Tạo modal nếu chưa có
+  let modal = document.getElementById("delete-confirm-modal");
+  if (!modal) {
+    modal = document.createElement("div");
+    modal.id = "delete-confirm-modal";
+    modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;";
+    modal.innerHTML = `
+      <div style="background:var(--surface);border-radius:12px;padding:28px 24px;max-width:380px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,.25);">
+        <div style="font-size:18px;font-weight:700;color:var(--red,#e74c3c);margin-bottom:8px;">⚠ Xóa phiếu</div>
+        <div style="font-size:13px;color:var(--text-muted);margin-bottom:16px;">
+          Hành động này <strong>không thể hoàn tác</strong>. Phiếu sẽ bị xóa hoàn toàn khỏi Google Sheets.<br><br>
+          Gõ <code style="background:var(--border);padding:2px 6px;border-radius:4px;">Delete</code> để xác nhận xóa phiếu <strong id="del-ma-label"></strong>:
+        </div>
+        <input id="del-confirm-input" type="text" placeholder="Gõ Delete để xác nhận"
+          style="width:100%;box-sizing:border-box;padding:8px 12px;border:1.5px solid var(--border);border-radius:6px;font-size:14px;margin-bottom:16px;background:var(--surface);color:var(--text);">
+        <div style="display:flex;gap:8px;justify-content:flex-end;">
+          <button id="del-cancel-btn" class="btn btn-sm">Hủy</button>
+          <button id="del-confirm-btn" class="btn btn-sm btn-danger" disabled>Xóa phiếu</button>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+    document.getElementById("del-cancel-btn").onclick = () => { modal.style.display = "none"; };
+    document.getElementById("del-confirm-input").oninput = function() {
+      document.getElementById("del-confirm-btn").disabled = this.value !== "Delete";
+    };
+    modal.addEventListener("click", e => { if (e.target === modal) modal.style.display = "none"; });
+  }
+  document.getElementById("del-ma-label").textContent = ma;
+  document.getElementById("del-confirm-input").value = "";
+  document.getElementById("del-confirm-btn").disabled = true;
+  modal.style.display = "flex";
+  document.getElementById("del-confirm-btn").onclick = () => {
+    modal.style.display = "none";
+    deleteRecord(ma);
+  };
+}
+
+// Xóa phiếu — chỉ chủ phiếu mới gọi được (kiểm tra ở renderDashboard)
 async function deleteRecord(ma) {
-  if (!confirm(`Xóa hoàn toàn phiếu ${ma}?\n\nHành động này không thể hoàn tác — phiếu sẽ bị xóa khỏi Google Sheets.`)) return;
   // Xóa local draft ngay
   removeLocalDraft(ma);
-  // Cập nhật cache ngay để UI phản hồi nhanh
   danhSachCache = danhSachCache.filter(r => r.ma_phieu !== ma);
   renderDashboard();
-  // Gọi API xóa server
   try {
     showAlert("dash-alert", `Đang xóa phiếu ${ma} trên server...`, "info");
     const url = new URL(API_URL);
@@ -1139,16 +1246,36 @@ async function deleteRecord(ma) {
     url.searchParams.set("ma_phieu", ma);
     url.searchParams.set("dieu_tra_vien", currentUser?.name || "");
     const res  = await fetch(url.toString());
-    const text = await res.text();
-    const data = JSON.parse(text);
+    const data = JSON.parse(await res.text());
     if (data?.success) {
       showAlert("dash-alert", `✓ Đã xóa phiếu ${ma} khỏi Google Sheets.`, "success");
     } else {
-      showAlert("dash-alert", `Xóa local thành công nhưng server báo lỗi: ${data?.error || "không rõ"}. Kiểm tra GAS.`, "error");
+      showAlert("dash-alert", `Xóa local thành công nhưng server báo lỗi: ${data?.error || "không rõ"}.`, "error");
     }
   } catch (e) {
-    showAlert("dash-alert", `Đã xóa local. Không kết nối được server để xóa trên Sheets (${e.message}).`, "error");
+    showAlert("dash-alert", `Đã xóa local. Không kết nối được server (${e.message}).`, "error");
   }
+}
+
+// Mở phiếu ở chế độ chỉ xem
+async function viewRecordByMa(ma) {
+  const record  = getMergedRecordByMa(ma);
+  const hasLocal = Boolean(getLocalDraft(ma));
+  if (!hasLocal && !record.local_only) {
+    showAlert("dash-alert", `Đang tải phiếu ${ma}...`, "info");
+    try {
+      const res = await apiGet("get", { ma });
+      hideAlert("dash-alert");
+      const fullData = res?.data || res || {};
+      const merged = { ...record, ...fullData };
+      showScreen("new", { record: merged, step: 1, source: "remote", viewMode: true });
+    } catch (e) {
+      hideAlert("dash-alert");
+      showAlert("dash-alert", `Không tải được dữ liệu phiếu (${e.message}).`, "error");
+    }
+    return;
+  }
+  showScreen("new", { record, step: 1, source: record.local_only ? "local" : "remote", viewMode: true });
 }
 
 // ── Mode banner / footer ─────────────────────────────────────
@@ -1178,11 +1305,45 @@ function ensureModeBanner() {
 function updateModeBanner(record) {
   const banner = ensureModeBanner();
   if (!banner) return;
-  const status     = record ? getRecordStatus(record) : { text: "Phiếu mới", cls: "badge-blue" };
+  const status = record ? getRecordStatus(record) : { text: "Phiếu mới", cls: "badge-blue" };
+  const myName = currentUser?.name || currentUser?.username || "";
+  const dtv    = record?.dieu_tra_vien || record?.user || "";
+  const isOwner = dtv === myName || !dtv;
+
+  if (viewMode) {
+    const editBtn = isOwner
+      ? `<button class="btn btn-sm btn-primary" style="margin-left:auto;" onclick="switchToEditMode()">✏ Sửa phiếu</button>`
+      : "";
+    banner.innerHTML = `
+      <strong>${record?.ma_phieu ? "Phiếu " + escapeHtml(record.ma_phieu) : ""}</strong>
+      · <span class="badge ${status.cls}">${escapeHtml(status.text)}</span>
+      <span class="sub">Chế độ xem — chỉ đọc</span>
+      ${editBtn}`;
+    banner.style.background = "var(--surface-alt, #f0f4f8)";
+    banner.style.border     = "1.5px solid var(--border)";
+    return;
+  }
+
   const sourceText = record?.local_only
     ? "Đang mở nháp lưu trên máy"
     : record?.ma_phieu ? "Có thể tiếp tục hoặc chỉnh sửa để cập nhật" : "Phiếu mới, có tự lưu nháp trên máy";
+  banner.style.background = "";
+  banner.style.border     = "";
   banner.innerHTML = `<strong>${record?.ma_phieu ? "Phiếu " + escapeHtml(record.ma_phieu) : "Phiếu mới"}</strong> · <span class="badge ${status.cls}">${escapeHtml(status.text)}</span><span class="sub">${escapeHtml(sourceText)}${record?.updated_at ? " · cập nhật gần nhất: " + escapeHtml(formatWhen(record.updated_at)) : ""}</span>`;
+}
+
+// Chuyển từ chế độ xem sang chỉnh sửa
+function switchToEditMode() {
+  viewMode  = false;
+  formDirty = false;
+  // Bật lại tất cả inputs
+  document.querySelectorAll("#step1 input,#step1 select,#step1 textarea,#step2 input,#step2 select,#step2 textarea,#step3 input,#step3 select,#step3 textarea").forEach(el => {
+    el.disabled = false;
+    el.style.opacity = "";
+  });
+  const record = getMergedRecordByMa(currentMaPhieu);
+  updateModeBanner(record);
+  showStep(currentStep); // re-render buttons
 }
 
 function updateFooterStatus(text) {
@@ -1278,6 +1439,31 @@ function applyFormData(data = {}) {
     const r = document.querySelector(`input[name="hl_${i}"][value="${parseInt(v, 10)}"]`);
     if (r) r.checked = true;
   }
+  // Khôi phục AIS-5 radios
+  for (let i = 1; i <= 5; i++) {
+    const v = data[`ais_${i}`];
+    if (v === undefined || v === null || v === "") continue;
+    const r = document.querySelector(`input[name="ais_${i}"][value="${parseInt(v, 10)}"]`);
+    if (r) r.checked = true;
+  }
+  // Khôi phục checkboxes nguyên nhân lo âu
+  try {
+    const loAuArr = typeof data.nguyen_nhan_lo_au === "string" && data.nguyen_nhan_lo_au
+      ? JSON.parse(data.nguyen_nhan_lo_au) : (Array.isArray(data.nguyen_nhan_lo_au) ? data.nguyen_nhan_lo_au : []);
+    loAuArr.forEach(val => {
+      const cb = document.querySelector(`input[name="nn_lo_au"][value="${val}"]`);
+      if (cb) cb.checked = true;
+    });
+  } catch {}
+  // Khôi phục checkboxes nguyên nhân RLGN
+  try {
+    const rlgnArr = typeof data.nguyen_nhan_rlgn === "string" && data.nguyen_nhan_rlgn
+      ? JSON.parse(data.nguyen_nhan_rlgn) : (Array.isArray(data.nguyen_nhan_rlgn) ? data.nguyen_nhan_rlgn : []);
+    rlgnArr.forEach(val => {
+      const cb = document.querySelector(`input[name="nn_rlgn"][value="${val}"]`);
+      if (cb) cb.checked = true;
+    });
+  } catch {}
   // Thuốc động: ưu tiên thuoc_ngay_*, fallback về field cũ nếu có
   [1, 2, 3].forEach(d => {
     if (data[`thuoc_ngay_${d}`]) {
@@ -1298,6 +1484,7 @@ function applyFormData(data = {}) {
   if (typeof calcBMI  === "function") calcBMI();
   if (typeof calcHADS === "function") calcHADS();
   if (typeof calcPSQI === "function") calcPSQI();
+  if (typeof calcAIS5 === "function") calcAIS5();
   restoreSelectionHighlights();
 }
 
@@ -1373,6 +1560,14 @@ function collectStep(n) {
     d.psqi9  = getNum("f_psqi9");
     for (let i = 0; i < 9; i++) d[`psqi_5_${i}`] = radio(`psqi_5_${i}`);
     d.psqi5j_text = getText("f_psqi5j_text");
+    // AIS-5
+    for (let i = 1; i <= 5; i++) d[`ais_${i}`] = radio(`ais_${i}`);
+    // Nguyên nhân lo âu (multi-select checkbox → JSON array)
+    const nnLoAuChecked = [...document.querySelectorAll("input[name='nn_lo_au']:checked")].map(el => el.value);
+    d.nguyen_nhan_lo_au = nnLoAuChecked.length ? JSON.stringify(nnLoAuChecked) : "";
+    // Nguyên nhân RLGN (multi-select checkbox → JSON array)
+    const nnRlgnChecked = [...document.querySelectorAll("input[name='nn_rlgn']:checked")].map(el => el.value);
+    d.nguyen_nhan_rlgn = nnRlgnChecked.length ? JSON.stringify(nnRlgnChecked) : "";
     return d;
   }
 
@@ -1640,6 +1835,39 @@ function buildStep2() {
         ${i === 8 ? `<div style="margin-top:8px"><input type="text" id="f_psqi5j_text" placeholder="Mô tả lý do khác..." style="width:100%;font-size:12px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);box-sizing:border-box;"></div>` : ""}
       </div>`).join("");
 
+  // AIS-5 cards
+  const ais5Items = window.AIS5_ITEMS || [];
+  const aisCards  = ais5Items.map(item => `
+    <div class="q-card">
+      <div class="q-header">
+        <span class="hads-badge badge-A" style="background:var(--teal-600,#0f6e56);">AIS${item.id}</span>
+        <span class="q-text"><strong>${item.label}</strong> — <span style="color:var(--text-muted);font-size:12px;">${item.desc}</span></span>
+      </div>
+      <div class="opt-list">
+        ${item.opts.map((o,vi) => `
+          <label class="opt-label" onclick="selectOpt(this)">
+            <input type="radio" name="ais_${item.id}" value="${vi}" onchange="calcAIS5()">
+            <span>${o}</span>
+          </label>`).join("")}
+      </div>
+    </div>`).join("");
+
+  // Nguyên nhân lo âu checkboxes
+  const nnLoAuItems = window.NGUYEN_NHAN_LO_AU || [];
+  const nnLoAuHtml  = nnLoAuItems.map((lbl,i) => `
+    <label class="opt-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;">
+      <input type="checkbox" name="nn_lo_au" value="${escapeHtml(lbl)}" id="nn_lo_au_${i}" style="width:15px;height:15px;flex-shrink:0;">
+      <span style="font-size:13px;">${lbl}</span>
+    </label>`).join("");
+
+  // Nguyên nhân RLGN checkboxes
+  const nnRlgnItems = window.NGUYEN_NHAN_RLGN || [];
+  const nnRlgnHtml  = nnRlgnItems.map((lbl,i) => `
+    <label class="opt-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;">
+      <input type="checkbox" name="nn_rlgn" value="${escapeHtml(lbl)}" id="nn_rlgn_${i}" style="width:15px;height:15px;flex-shrink:0;">
+      <span style="font-size:13px;">${lbl}</span>
+    </label>`).join("");
+
   document.getElementById("step2").innerHTML = `
   <div class="card">
     <div class="card-title">B1. Thang HADS — 14 câu <span style="font-size:11px;color:var(--red)">* Bắt buộc trả lời đủ 14 câu</span></div>
@@ -1723,6 +1951,22 @@ function buildStep2() {
       <div class="score-cell"><div class="score-val" id="psqi-total">—</div><div class="score-lbl">Tổng PSQI (/21)</div></div>
       <div class="score-cell"><div class="score-val" id="psqi-interp" style="font-size:13px"></div><div class="score-lbl">Phân loại</div></div>
     </div>
+  </div>
+  <div class="card">
+    <div class="card-title">B3. Thang AIS-5 — Rối loạn giấc ngủ <span style="font-size:11px;color:var(--text-muted)">(Athens Insomnia Scale, ngưỡng >4)</span></div>
+    <div class="q-list">${aisCards}</div>
+    <div class="score-row" id="ais-score">
+      <div class="score-cell"><div class="score-val" id="ais-total">—</div><div class="score-lbl">Tổng AIS-5 (/15)</div></div>
+      <div class="score-cell"><div class="score-val" id="ais-interp" style="font-size:13px"></div><div class="score-lbl">Phân loại</div></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">B4. Nguyên nhân lo âu trước phẫu thuật <span style="font-size:11px;color:var(--text-muted)">(có thể chọn nhiều)</span></div>
+    <div class="q-list" style="display:flex;flex-direction:column;gap:8px;">${nnLoAuHtml}</div>
+  </div>
+  <div class="card">
+    <div class="card-title">B5. Nguyên nhân rối loạn giấc ngủ <span style="font-size:11px;color:var(--text-muted)">(có thể chọn nhiều)</span></div>
+    <div class="q-list" style="display:flex;flex-direction:column;gap:8px;">${nnRlgnHtml}</div>
   </div>`;
 }
 
@@ -1889,6 +2133,23 @@ function calcPSQI() {
   const tv = document.getElementById("psqi-total"), ti = document.getElementById("psqi-interp");
   if (tv) tv.textContent = total;
   if (ti) { ti.textContent = total >= 5 ? "Kém (≥5)" : "Tốt (<5)"; ti.style.color = total >= 5 ? "var(--red)" : "var(--green)"; }
+}
+
+function calcAIS5() {
+  let total = 0, count = 0;
+  for (let i = 1; i <= 5; i++) {
+    const sel = document.querySelector(`input[name="ais_${i}"]:checked`);
+    if (sel) { total += +sel.value; count++; }
+  }
+  const tv = document.getElementById("ais-total");
+  const ti = document.getElementById("ais-interp");
+  if (tv) tv.textContent = count > 0 ? total : "—";
+  if (ti && count === 5) {
+    ti.textContent = total > 4 ? "Rối loạn (>4)" : "Bình thường (≤4)";
+    ti.style.color = total > 4 ? "var(--red)" : "var(--green)";
+  } else if (ti) {
+    ti.textContent = "";
+  }
 }
 
 // ── Selection highlight ───────────────────────────────────────
