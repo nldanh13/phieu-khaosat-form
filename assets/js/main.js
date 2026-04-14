@@ -92,6 +92,7 @@ let danhSachCache      = [];
 let tongHopCache       = null; // thống kê toàn hệ thống
 let activeDashTab      = 'mine'; // 'mine' | 'overall'
 let dashboardFilter    = "all";
+let dashboardOwnerFilter = "all";
 let dashboardQuery     = "";
 let draftSaveTimer     = null;
 let dashboardPage      = 1;
@@ -274,6 +275,59 @@ function formatWhen(value) {
   return String(value);
 }
 
+
+function getCurrentUserName() {
+  return currentUser?.name || currentUser?.username || "";
+}
+
+function normalizeText(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function isRecordOwner(record) {
+  const owner = normalizeText(record?.dieu_tra_vien || record?.user || "");
+  const me = normalizeText(getCurrentUserName());
+  if (!me) return false;
+  return !owner || owner === me;
+}
+
+function getAdmissionDuplicateKey(record) {
+  const soHoSo = normalizeText(record?.so_ho_so);
+  const ngayNhapVien = String(record?.ngay_nhap_vien || "").trim();
+  return soHoSo && ngayNhapVien ? `${soHoSo}__${ngayNhapVien}` : "";
+}
+
+function findDuplicateRecords(step1Data, excludeMa = currentMaPhieu) {
+  const key = getAdmissionDuplicateKey(step1Data);
+  if (!key) return [];
+  return getManagedRecords().filter(record => {
+    if (!record?.ma_phieu || record.ma_phieu === excludeMa) return false;
+    return getAdmissionDuplicateKey(record) === key;
+  });
+}
+
+function buildDuplicateMessage(step1Data, duplicates) {
+  if (!duplicates?.length) return "";
+  const first = duplicates[0];
+  const owner = first?.dieu_tra_vien || first?.user || "không rõ";
+  const dateText = step1Data?.ngay_nhap_vien || "";
+  return `Đã có phiếu ${first.ma_phieu} do ${owner} tạo cho mã BN ${step1Data.so_ho_so} ngày nhập viện ${dateText}. Hãy mở phiếu có sẵn để tránh nhập trùng.`;
+}
+
+function getCurrentStep1Data() {
+  const data = collectStep(1);
+  data.ma_phieu = currentMaPhieu;
+  return data;
+}
+
+function ensureEditableRecord(record = getMergedRecordByMa(currentMaPhieu), alertId = "form-alert") {
+  if (viewMode || !isRecordOwner(record)) {
+    showAlert(alertId, "Bạn chỉ có quyền xem phiếu này. Chỉ người tạo phiếu mới được sửa hoặc xóa.", "error");
+    return false;
+  }
+  return true;
+}
+
 // ── Local Draft ──────────────────────────────────────────────
 function getLocalDraftMap()    { return parseJSONSafe(localStorage.getItem(LOCAL_DRAFT_KEY), {}); }
 function setLocalDraftMap(map) { localStorage.setItem(LOCAL_DRAFT_KEY, JSON.stringify(map)); }
@@ -295,18 +349,22 @@ function hasRemoteRecord(ma) {
 // ── Merged record helpers ────────────────────────────────────
 function getMergedRecordByMa(ma) {
   const remote = danhSachCache.find(item => item.ma_phieu === ma) || null;
-  const local  = getLocalDraft(ma);
+  let local    = getLocalDraft(ma);
+  if (remote && local && !isRecordOwner(remote)) {
+    local = null;
+  }
   const merged = { ...(remote || {}), ...((local && local.data) || {}) };
   merged.ma_phieu   = ma;
   // buoc từ Sheets có thể là datetime object (Sheets bug) — cần parse số thuần
   const parseBuoc = v => {
     if (!v && v !== 0) return 0;
-    const n = parseInt(String(v), 10);       // parseInt("3") = 3, parseInt("Thu Jan...") = NaN
+    const n = parseInt(String(v), 10);
     return (!isNaN(n) && n >= 1 && n <= 3) ? n : 0;
   };
   merged.buoc       = Math.max(parseBuoc(remote?.buoc), parseBuoc(local?.buoc), 1);
   merged.last_step  = Number(local?.last_step || merged.buoc || 1);
   merged.updated_at = local?.updated_at || remote?.updated_at || remote?.ngay_thu_thap || "";
+  merged.created_at = remote?.created_at || local?.data?.created_at || "";
   merged.local_only = Boolean(local && !remote);
   merged.has_local  = Boolean(local);
   merged.synced     = Boolean(local?.synced);
@@ -379,7 +437,7 @@ function showScreen(name, options = {}) {
     currentMaPhieu      = record?.ma_phieu || genMaPhieu();
     currentHighestStep  = Math.max(Number(record?.buoc || 0), 1);
     formDirty           = false; // reset khi mở form mới
-    viewMode            = options.viewMode || false;
+    viewMode            = Boolean(options.viewMode || (record && !isRecordOwner(record)));
     buildStep1(); buildStep2(); buildStep3();
     // Khởi tạo 1 hàng thuốc trống cho mỗi ngày
     [1, 2, 3].forEach(d => applyThuocNgay(d, ""));
@@ -391,9 +449,8 @@ function showScreen(name, options = {}) {
     });
     if (record) {
       applyFormData(record);
-      // [FIX-SEED] Nếu chưa có draft local, tạo draft seed từ remote data
-      // Đảm bảo autosave sau đó sẽ merge vào data đầy đủ, không bị mất bước khác
-      if (!getLocalDraft(currentMaPhieu)) {
+      // Chỉ chủ phiếu mới được tạo draft local seed để tiếp tục chỉnh sửa
+      if (!viewMode && isRecordOwner(record) && !getLocalDraft(currentMaPhieu)) {
         const seedData = { ...record };
         delete seedData.ma_phieu; delete seedData.buoc; delete seedData.last_step;
         delete seedData.updated_at; delete seedData.local_only; delete seedData.has_local; delete seedData.synced;
@@ -404,7 +461,7 @@ function showScreen(name, options = {}) {
           updated_at: record.updated_at || new Date().toISOString(),
           local_only: false,
           synced:     true,
-          user:       currentUser?.name || "",
+          user:       getCurrentUserName(),
           data:       { ...seedData, ma_phieu: currentMaPhieu },
         });
       }
@@ -476,6 +533,7 @@ function jumpToStep(step) {
 }
 
 async function nextStep()  {
+  if (!ensureEditableRecord()) return;
   const errors = validateStep(currentStep);
   if (errors.length > 0) {
     showAlert("form-alert", "Vui lòng điền đầy đủ: " + errors.join(" · "), "error");
@@ -491,8 +549,8 @@ async function nextStep()  {
   const data = collectStep(stepToSave);
   data.ma_phieu       = currentMaPhieu;
   data.buoc           = currentHighestStep;
-  data.dieu_tra_vien  = currentUser?.name || "";
-  data.updated_by     = currentUser?.name || "";
+  data.dieu_tra_vien  = getCurrentUserName();
+  data.updated_by     = getCurrentUserName();
   apiPost(data).then(() => {
     markLocalSynced();
     updateFooterStatus(`Đã lưu hệ thống lúc ${formatWhen(new Date().toISOString())}`);
@@ -504,6 +562,7 @@ async function nextStep()  {
 function prevStep() { showStep(Math.max(1, currentStep - 1)); }
 
 async function finishForm() {
+  if (!ensureEditableRecord()) return;
   const errors = validateStep(currentStep);
   if (errors.length > 0) {
     showAlert("form-alert", "Vui lòng điền đầy đủ: " + errors.join(" · "), "error");
@@ -519,8 +578,8 @@ async function finishForm() {
     const step3Data = collectStep(3);
     const data = { ...(existingDraft.data || {}), ...step3Data, ma_phieu: currentMaPhieu };
     data.buoc     = 3;
-    data.dieu_tra_vien = currentUser?.name || "";
-    data.updated_by    = currentUser?.name || "";
+    data.dieu_tra_vien = getCurrentUserName();
+    data.updated_by    = getCurrentUserName();
     await apiPost(data);
     // Lưu draft với toàn bộ data đã merge
     upsertLocalDraft({
@@ -531,7 +590,7 @@ async function finishForm() {
       updated_at: new Date().toISOString(),
       local_only: false,
       synced:     true,
-      user:       currentUser?.name || "",
+      user:       getCurrentUserName(),
       data:       { ...(existingDraft.data || {}), ...step3Data, ma_phieu: currentMaPhieu },
     });
     showAlert("form-alert", `Phiếu ${currentMaPhieu} đã lưu hoàn thành.`, "success");
@@ -606,6 +665,7 @@ function detectChangedSteps(current, snapshot) {
 
 // [FIX-UPDATE] Chỉ gửi bước nào có thay đổi so với data đã lưu trên server
 async function saveAllStepsUpdate() {
+  if (!ensureEditableRecord()) return;
   const errors = validateStep(currentStep);
   if (errors.length > 0) {
     showAlert("form-alert", "Vui lòng điền đầy đủ: " + errors.join(" · "), "error");
@@ -617,7 +677,7 @@ async function saveAllStepsUpdate() {
   try {
     const draft    = getLocalDraft(currentMaPhieu) || {};
     const newData  = { ...(draft.data || {}), ma_phieu: currentMaPhieu };
-    const dtv      = currentUser?.name || "";
+    const dtv      = getCurrentUserName();
 
     // Snapshot = data từ server (remote cache) — dùng để so sánh
     const remote   = danhSachCache.find(r => r.ma_phieu === currentMaPhieu) || {};
@@ -687,6 +747,12 @@ function validateStep(n) {
     if (!get("f_ngayNhapVien")) errors.push("Ngày nhập viện");
     if (!get("f_loaiPT"))       errors.push("Loại phẫu thuật");
     if (!get("f_voCam"))        errors.push("Phương pháp vô cảm");
+    if (errors.length === 0) {
+      const step1Data = getCurrentStep1Data();
+      const duplicates = findDuplicateRecords(step1Data, currentMaPhieu);
+      const duplicateMessage = buildDuplicateMessage(step1Data, duplicates);
+      if (duplicateMessage) errors.push(duplicateMessage);
+    }
   }
 
   if (n === 2) {
@@ -708,6 +774,7 @@ function validateStep(n) {
 
 // ── Save current step (chỉ dùng cho finishForm — nextStep đã tách) ───────────
 async function saveCurrentStep() {
+  if (!ensureEditableRecord()) return false;
   const errors = validateStep(currentStep);
   if (errors.length > 0) {
     showAlert("form-alert", "Vui lòng điền đầy đủ: " + errors.join(" · "), "error");
@@ -719,8 +786,8 @@ async function saveCurrentStep() {
     const data = collectStep(currentStep);
     data.ma_phieu = currentMaPhieu;
     data.buoc     = Math.max(Number(currentHighestStep || 0), Number(currentStep || 0), 1);
-    data.dieu_tra_vien = currentUser?.name || "";
-    data.updated_by    = currentUser?.name || "";
+    data.dieu_tra_vien = getCurrentUserName();
+    data.updated_by    = getCurrentUserName();
     await apiPost(data);
     currentHighestStep = Math.max(Number(currentHighestStep || 0), Number(currentStep || 0), 1);
     markLocalSynced();
@@ -738,6 +805,9 @@ async function saveCurrentStep() {
 // ── Local draft ──────────────────────────────────────────────
 function saveLocalProgress(showMessage = false) {
   if (!currentMaPhieu || !document.getElementById("screen-new")?.classList.contains("active")) return;
+  if (viewMode) return;
+  const activeRecord = getMergedRecordByMa(currentMaPhieu);
+  if (activeRecord?.ma_phieu && !isRecordOwner(activeRecord)) return;
   const existing = getLocalDraft(currentMaPhieu) || {};
   // [FIX-OVERWRITE] Chỉ collect bước ĐANG HIỂN THỊ để tránh overwrite
   // dữ liệu bước khác bằng "" (DOM ẩn trả về rỗng)
@@ -749,7 +819,7 @@ function saveLocalProgress(showMessage = false) {
     updated_at: new Date().toISOString(),
     local_only: !hasRemoteRecord(currentMaPhieu),
     synced:     false,
-    user:       currentUser?.name || "",
+    user:       getCurrentUserName(),
     // Merge: giữ nguyên data cũ, chỉ cập nhật bước hiện tại
     data: { ...(existing.data || {}), ...currentStepData, ma_phieu: currentMaPhieu },
   };
@@ -769,7 +839,7 @@ function markLocalSynced() {
     last_step:  Number(currentStep || 1),
     updated_at: new Date().toISOString(),
     local_only: false, synced: true,
-    user:       currentUser?.name || "",
+    user:       getCurrentUserName(),
     data: { ...(existing.data || {}), ...currentStepData, ma_phieu: currentMaPhieu },
   });
 }
@@ -802,7 +872,7 @@ async function loadDanhSach() {
     // Tất cả user đều load toàn bộ (user=all)
     // Dashboard "Phiếu của tôi" lọc theo currentUser ở client
     // → tab Tổng quan có đủ dữ liệu cho calcTongHopLocal fallback
-    const res = await apiGet("danh-sach", { user: "all" });
+    const res = await apiGet("danh-sach");
     console.log("[loadDanhSach] raw response:", JSON.stringify(res)?.slice(0, 300));
     danhSachCache = Array.isArray(res) ? res : (res.data || res.items || []);
     console.log("[loadDanhSach] cache size:", danhSachCache.length, "| first ma_phieu:", danhSachCache[0]?.ma_phieu);
@@ -1045,59 +1115,67 @@ function renderTongHop() {
 }
 
 function renderDashboard() {
-  // Tất cả user đều thấy toàn bộ phiếu
   const allRecords = getManagedRecords();
-  const myName     = currentUser?.name || currentUser?.username || "";
+  const myName = getCurrentUserName();
 
   const normalizedQuery = dashboardQuery.trim().toLowerCase();
-  const filtered        = allRecords.filter(record => {
-    const hay    = `${record.ma_phieu || ""} ${record.ho_ten || ""} ${record.so_ho_so || ""}`.toLowerCase();
+  const filtered = allRecords.filter(record => {
+    const hay = `${record.ma_phieu || ""} ${record.ho_ten || ""} ${record.so_ho_so || ""} ${record.dieu_tra_vien || ""}`.toLowerCase();
     const matchQ = !normalizedQuery || hay.includes(normalizedQuery);
+    const statusText = getRecordStatus(record).text;
     const matchF = dashboardFilter === "all"
-      || (dashboardFilter === "draft"    && getRecordStatus(record).text === "Phiếu mới")
-      || (dashboardFilter === "progress" && !record.local_only && (record.buoc || 0) < 3)
-      || (dashboardFilter === "done"     && getRecordStatus(record).text === "Hoàn thành");
-    return matchQ && matchF;
+      || (dashboardFilter === "draft" && statusText === "Phiếu mới")
+      || (dashboardFilter === "progress" && ["Đang điền", "Đang thực hiện", "Chưa đồng bộ", "Nháp trên máy"].includes(statusText))
+      || (dashboardFilter === "done" && statusText === "Hoàn thành");
+    const owner = isRecordOwner(record);
+    const matchOwner = dashboardOwnerFilter === "all"
+      || (dashboardOwnerFilter === "mine" && owner)
+      || (dashboardOwnerFilter === "others" && !owner);
+    return matchQ && matchF && matchOwner;
   });
 
-  const totalPages  = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  dashboardPage     = Math.min(dashboardPage, totalPages);
-  const pageStart   = (dashboardPage - 1) * PAGE_SIZE;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  dashboardPage = Math.min(dashboardPage, totalPages);
+  const pageStart = (dashboardPage - 1) * PAGE_SIZE;
   const pageRecords = filtered.slice(pageStart, pageStart + PAGE_SIZE);
 
+  const mineCount = allRecords.filter(isRecordOwner).length;
   document.getElementById("stat-grid").innerHTML = `
     <div class="stat-card"><div class="stat-num">${allRecords.length}</div><div class="stat-lbl">Tổng phiếu</div></div>
-    <div class="stat-card"><div class="stat-num">${allRecords.filter(r => getRecordStatus(r).text === "Phiếu mới").length}</div><div class="stat-lbl">Phiếu mới</div></div>
-    <div class="stat-card"><div class="stat-num">${allRecords.filter(r => r.buoc > 0 && r.buoc < 3).length}</div><div class="stat-lbl">Đang điền</div></div>
+    <div class="stat-card"><div class="stat-num">${mineCount}</div><div class="stat-lbl">Phiếu của tôi</div></div>
+    <div class="stat-card"><div class="stat-num">${allRecords.filter(r => ["Đang điền","Đang thực hiện","Chưa đồng bộ","Nháp trên máy"].includes(getRecordStatus(r).text)).length}</div><div class="stat-lbl">Đang điền</div></div>
     <div class="stat-card"><div class="stat-num">${allRecords.filter(r => getRecordStatus(r).text === "Hoàn thành").length}</div><div class="stat-lbl">Hoàn thành</div></div>
   `;
 
   const cards = pageRecords.map(record => {
-    const status  = getRecordStatus(record);
-    const dtv     = record.dieu_tra_vien || record.user || "";
-    const isOwner = dtv === myName || !dtv;
+    const status = getRecordStatus(record);
+    const dtv = record.dieu_tra_vien || record.user || "";
+    const isOwner = isRecordOwner(record);
     const actionText = (record.buoc || 0) >= 3 ? "Cập nhật" : "Tiếp tục";
+    const duplicates = findDuplicateRecords(record, record.ma_phieu);
     return `
       <div class="phieu-item">
         <div class="phieu-head">
           <div>
             <div class="phieu-name">${escapeHtml(record.ho_ten || "(Chưa có tên bệnh nhân)")}</div>
-            <div class="phieu-sub">Mã phiếu: ${escapeHtml(record.ma_phieu || "")} · ${record.so_ho_so ? "Mã BN: " + escapeHtml(record.so_ho_so) + " · " : ""}${record.updated_at ? "Cập nhật: " + escapeHtml(formatWhen(record.updated_at)) : "Chưa có thời gian"}</div>
+            <div class="phieu-sub">Mã phiếu: ${escapeHtml(record.ma_phieu || "")} · ${record.so_ho_so ? "Mã BN: " + escapeHtml(record.so_ho_so) + " · " : ""}${record.created_at ? "Tạo: " + escapeHtml(formatWhen(record.created_at)) + " · " : ""}${record.updated_at ? "Cập nhật: " + escapeHtml(formatWhen(record.updated_at)) : "Chưa có thời gian"}</div>
           </div>
           <div class="phieu-actions">
             <button class="btn btn-sm" onclick="viewRecordByMa('${escapeHtml(record.ma_phieu)}')">👁 Xem</button>
             ${isOwner ? `<button class="btn btn-sm btn-primary" onclick="openRecordByMa('${escapeHtml(record.ma_phieu)}')">${actionText}</button>` : ""}
             ${isOwner ? `<button class="btn btn-sm btn-danger" onclick="confirmDeleteRecord('${escapeHtml(record.ma_phieu)}')">🗑 Xóa</button>` : ""}
-            ${record.has_local ? `<button class="btn btn-sm" onclick="deleteLocalDraftOnly('${escapeHtml(record.ma_phieu)}')">Xóa nháp máy</button>` : ""}
+            ${record.has_local && isOwner ? `<button class="btn btn-sm" onclick="deleteLocalDraftOnly('${escapeHtml(record.ma_phieu)}')">Xóa nháp máy</button>` : ""}
           </div>
         </div>
         <div class="phieu-meta">
           <span class="badge ${status.cls}">${escapeHtml(status.text)}</span>
           <span class="badge badge-blue">${escapeHtml(getStepLabel(record))}</span>
+          <span class="badge ${isOwner ? "badge-green" : "badge-gray"}">${isOwner ? "Của tôi" : "Phiếu người khác"}</span>
           ${dtv ? `<span class="badge badge-gray">👤 ${escapeHtml(dtv)}</span>` : ""}
-          ${record.updated_by && record.updated_by !== dtv ? `<span class="badge badge-blue" title="Người sửa gần nhất">✏️ ${escapeHtml(record.updated_by)}</span>` : ""}
+          ${record.updated_by ? `<span class="badge badge-blue" title="Người sửa gần nhất">✏️ ${escapeHtml(record.updated_by)}</span>` : ""}
           ${record.gioi_tinh ? `<span class="badge badge-gray">${escapeHtml(record.gioi_tinh)}</span>` : ""}
-          ${record.loai_pt  ? `<span class="badge badge-amber">${escapeHtml(record.loai_pt)}</span>` : ""}
+          ${record.loai_pt ? `<span class="badge badge-amber">${escapeHtml(record.loai_pt)}</span>` : ""}
+          ${duplicates.length ? `<span class="badge badge-amber" title="Có phiếu cùng mã BN và ngày nhập viện">Trùng ${duplicates.length}</span>` : ""}
           ${record.local_only ? `<span class="badge badge-gray">Chưa gửi lên hệ thống</span>` : ""}
         </div>
       </div>`;
@@ -1112,12 +1190,17 @@ function renderDashboard() {
 
   document.getElementById("phieu-list").innerHTML = `
     <div class="dashboard-tools">
-      <div class="dashboard-search"><input id="dash-search" type="search" placeholder="Tìm theo tên, mã phiếu, số hồ sơ..." value="${escapeHtml(dashboardQuery)}"></div>
+      <div class="dashboard-search"><input id="dash-search" type="search" placeholder="Tìm theo tên, mã phiếu, số hồ sơ, người tạo..." value="${escapeHtml(dashboardQuery)}"></div>
+      <div class="segmented" id="dash-owner-segmented">
+        <button data-owner="all" class="${dashboardOwnerFilter === "all" ? "active" : ""}">Tất cả</button>
+        <button data-owner="mine" class="${dashboardOwnerFilter === "mine" ? "active" : ""}">Của tôi</button>
+        <button data-owner="others" class="${dashboardOwnerFilter === "others" ? "active" : ""}">Người khác</button>
+      </div>
       <div class="segmented" id="dash-segmented">
-        <button data-filter="all"      class="${dashboardFilter === "all"      ? "active" : ""}">Tất cả</button>
-        <button data-filter="draft"    class="${dashboardFilter === "draft"    ? "active" : ""}">Phiếu mới</button>
+        <button data-filter="all" class="${dashboardFilter === "all" ? "active" : ""}">Mọi trạng thái</button>
+        <button data-filter="draft" class="${dashboardFilter === "draft" ? "active" : ""}">Phiếu mới</button>
         <button data-filter="progress" class="${dashboardFilter === "progress" ? "active" : ""}">Đang điền</button>
-        <button data-filter="done"     class="${dashboardFilter === "done"     ? "active" : ""}">Hoàn thành</button>
+        <button data-filter="done" class="${dashboardFilter === "done" ? "active" : ""}">Hoàn thành</button>
       </div>
     </div>
     <div class="phieu-list-wrap">${cards || '<div class="empty">Không có phiếu phù hợp bộ lọc hiện tại.</div>'}</div>
@@ -1126,39 +1209,54 @@ function renderDashboard() {
 
   document.getElementById("dash-search")?.addEventListener("input", e => {
     dashboardQuery = e.target.value || "";
-    dashboardPage  = 1;
+    dashboardPage = 1;
     renderDashboard();
   });
   document.querySelectorAll("#dash-segmented button").forEach(btn => {
     btn.addEventListener("click", () => {
       dashboardFilter = btn.dataset.filter || "all";
-      dashboardPage   = 1;
+      dashboardPage = 1;
+      renderDashboard();
+    });
+  });
+  document.querySelectorAll("#dash-owner-segmented button").forEach(btn => {
+    btn.addEventListener("click", () => {
+      dashboardOwnerFilter = btn.dataset.owner || "all";
+      dashboardPage = 1;
       renderDashboard();
     });
   });
 }
 
 function changePage(page) {
-  const records  = getManagedRecords();
+  const records = getManagedRecords();
   const filtered = records.filter(record => {
-    const hay    = `${record.ma_phieu || ""} ${record.ho_ten || ""} ${record.so_ho_so || ""}`.toLowerCase();
+    const hay = `${record.ma_phieu || ""} ${record.ho_ten || ""} ${record.so_ho_so || ""} ${record.dieu_tra_vien || ""}`.toLowerCase();
     const matchQ = !dashboardQuery.trim() || hay.includes(dashboardQuery.trim().toLowerCase());
+    const statusText = getRecordStatus(record).text;
     const matchF = dashboardFilter === "all"
-      || (dashboardFilter === "draft"    && getRecordStatus(record).text === "Phiếu mới")
-      || (dashboardFilter === "progress" && !record.local_only && (record.buoc || 0) < 3)
-      || (dashboardFilter === "done"     && (record.buoc || 0) >= 3);
-    return matchQ && matchF;
+      || (dashboardFilter === "draft" && statusText === "Phiếu mới")
+      || (dashboardFilter === "progress" && ["Đang điền", "Đang thực hiện", "Chưa đồng bộ", "Nháp trên máy"].includes(statusText))
+      || (dashboardFilter === "done" && statusText === "Hoàn thành");
+    const owner = isRecordOwner(record);
+    const matchOwner = dashboardOwnerFilter === "all"
+      || (dashboardOwnerFilter === "mine" && owner)
+      || (dashboardOwnerFilter === "others" && !owner);
+    return matchQ && matchF && matchOwner;
   });
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  dashboardPage    = Math.max(1, Math.min(page, totalPages));
+  dashboardPage = Math.max(1, Math.min(page, totalPages));
   renderDashboard();
 }
 
 async function openRecordByMa(ma) {
   const record = getMergedRecordByMa(ma);
+  if (!isRecordOwner(record)) {
+    showAlert("dash-alert", "Bạn chỉ có quyền xem phiếu do người khác tạo.", "info");
+    return viewRecordByMa(ma);
+  }
 
-  // Nếu không có local draft (phiếu của người khác hoặc chưa từng mở),
-  // fetch đầy đủ 3 bước từ server trước khi mở form
+  // Nếu không có local draft, fetch đầy đủ 3 bước từ server trước khi mở form
   const hasLocal = Boolean(getLocalDraft(ma));
   if (!hasLocal && !record.local_only) {
     showAlert("dash-alert", `Đang tải phiếu ${ma}...`, "info");
@@ -1196,6 +1294,11 @@ function deleteLocalDraftOnly(ma) {
 
 // Popup xác nhận xóa — yêu cầu gõ "Delete"
 function confirmDeleteRecord(ma) {
+  const record = getMergedRecordByMa(ma);
+  if (!isRecordOwner(record)) {
+    showAlert("dash-alert", "Chỉ người tạo phiếu mới được xóa phiếu này.", "error");
+    return;
+  }
   // Tạo modal nếu chưa có
   let modal = document.getElementById("delete-confirm-modal");
   if (!modal) {
@@ -1235,25 +1338,29 @@ function confirmDeleteRecord(ma) {
 
 // Xóa phiếu — chỉ chủ phiếu mới gọi được (kiểm tra ở renderDashboard)
 async function deleteRecord(ma) {
-  // Xóa local draft ngay
-  removeLocalDraft(ma);
-  danhSachCache = danhSachCache.filter(r => r.ma_phieu !== ma);
-  renderDashboard();
+  const record = getMergedRecordByMa(ma);
+  if (!isRecordOwner(record)) {
+    showAlert("dash-alert", "Chỉ người tạo phiếu mới được xóa phiếu này.", "error");
+    return;
+  }
   try {
     showAlert("dash-alert", `Đang xóa phiếu ${ma} trên server...`, "info");
     const url = new URL(API_URL);
     url.searchParams.set("action", "delete");
     url.searchParams.set("ma_phieu", ma);
-    url.searchParams.set("dieu_tra_vien", currentUser?.name || "");
-    const res  = await fetch(url.toString());
+    url.searchParams.set("actor", getCurrentUserName());
+    const res = await fetch(url.toString());
     const data = JSON.parse(await res.text());
     if (data?.success) {
+      removeLocalDraft(ma);
+      danhSachCache = danhSachCache.filter(r => r.ma_phieu !== ma);
+      renderDashboard();
       showAlert("dash-alert", `✓ Đã xóa phiếu ${ma} khỏi Google Sheets.`, "success");
     } else {
-      showAlert("dash-alert", `Xóa local thành công nhưng server báo lỗi: ${data?.error || "không rõ"}.`, "error");
+      showAlert("dash-alert", data?.error || `Không thể xóa phiếu ${ma}.`, "error");
     }
   } catch (e) {
-    showAlert("dash-alert", `Đã xóa local. Không kết nối được server (${e.message}).`, "error");
+    showAlert("dash-alert", `Không kết nối được server (${e.message}). Phiếu chưa bị xóa.`, "error");
   }
 }
 
@@ -1306,9 +1413,8 @@ function updateModeBanner(record) {
   const banner = ensureModeBanner();
   if (!banner) return;
   const status = record ? getRecordStatus(record) : { text: "Phiếu mới", cls: "badge-blue" };
-  const myName = currentUser?.name || currentUser?.username || "";
   const dtv    = record?.dieu_tra_vien || record?.user || "";
-  const isOwner = dtv === myName || !dtv;
+  const isOwner = isRecordOwner(record);
 
   if (viewMode) {
     const editBtn = isOwner
@@ -1326,6 +1432,7 @@ function updateModeBanner(record) {
 
   const sourceText = record?.local_only
     ? "Đang mở nháp lưu trên máy"
+    : !isOwner && record?.ma_phieu ? `Phiếu do ${dtv || "người khác"} tạo — bạn chỉ có thể xem`
     : record?.ma_phieu ? "Có thể tiếp tục hoặc chỉnh sửa để cập nhật" : "Phiếu mới, có tự lưu nháp trên máy";
   banner.style.background = "";
   banner.style.border     = "";
@@ -1334,6 +1441,11 @@ function updateModeBanner(record) {
 
 // Chuyển từ chế độ xem sang chỉnh sửa
 function switchToEditMode() {
+  const record = getMergedRecordByMa(currentMaPhieu);
+  if (!isRecordOwner(record)) {
+    showAlert("form-alert", "Chỉ người tạo phiếu mới được chuyển sang chế độ sửa.", "error");
+    return;
+  }
   viewMode  = false;
   formDirty = false;
   // Bật lại tất cả inputs
@@ -1341,7 +1453,6 @@ function switchToEditMode() {
     el.disabled = false;
     el.style.opacity = "";
   });
-  const record = getMergedRecordByMa(currentMaPhieu);
   updateModeBanner(record);
   showStep(currentStep); // re-render buttons
 }
