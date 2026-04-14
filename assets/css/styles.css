@@ -678,6 +678,28 @@ body{font-family:'Be Vietnam Pro',system-ui,sans-serif;font-size:14px;line-heigh
   flex-wrap: wrap;
   gap: 8px;
 }
+.dash-limit-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.dash-limit-wrap label {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.dash-limit-select {
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  outline: none;
+}
 .compact-list { gap: 8px; }
 .phieu-item.phieu-compact {
   display: grid;

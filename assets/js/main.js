@@ -98,10 +98,12 @@ let draftSaveTimer     = null;
 let dashboardPage      = 1;
 let formDirty          = false; // true khi user đã thay đổi ít nhất 1 trường
 let viewMode           = false; // true = chế độ xem (read-only)
-const PAGE_SIZE        = 20;
+let dashboardPageSize  = parseInt(localStorage.getItem("phieu_dash_page_size_v1") || "20", 10);
+if (![20, 50, 100, -1].includes(dashboardPageSize)) dashboardPageSize = 20;
 
 const LOCAL_DRAFT_KEY  = "phieu_local_drafts_v3";
 const FULL_RECORD_CACHE_KEY = "phieu_full_records_cache_v1";
+const DASH_PAGE_SIZE_KEY = "phieu_dash_page_size_v1";
 const MUC_TIEU_KEY     = "phieu_muc_tieu_v1";
 const MUC_TIEU_DEFAULT = 171;
 
@@ -416,30 +418,127 @@ function getMergedRecordByMa(ma) {
   return merged;
 }
 
+function sortRecordsForDashboard(a, b) {
+  const ownerDelta = Number(isRecordOwner(b)) - Number(isRecordOwner(a));
+  if (ownerDelta !== 0) return ownerDelta;
+  return new Date(b.updated_at || 0).getTime() - new Date(a.updated_at || 0).getTime();
+}
+
 function getManagedRecords() {
   const ids = new Set();
   danhSachCache.forEach(item => item?.ma_phieu && ids.add(item.ma_phieu));
   listLocalDrafts().forEach(item => item?.ma_phieu && ids.add(item.ma_phieu));
-  return [...ids].map(getMergedRecordByMa).sort((a, b) =>
-    new Date(b.updated_at || 0).getTime() - new Date(a.updated_at || 0).getTime()
-  );
+  return [...ids].map(getMergedRecordByMa).sort(sortRecordsForDashboard);
+}
+
+function normalizePatientName(value) {
+  return String(value || "").replace(/\s+/g, " ").trim().toLocaleUpperCase("vi-VN");
+}
+
+function formatPatientName(value) {
+  const normalized = normalizePatientName(value);
+  return normalized || "(Chưa có tên bệnh nhân)";
+}
+
+function hasMeaningfulValue(value) {
+  if (value === undefined || value === null) return false;
+  if (typeof value === "number") return !Number.isNaN(value);
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return false;
+    if (trimmed === "[]" || trimmed === "{}") return false;
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) return parsed.length > 0;
+      if (parsed && typeof parsed === "object") return Object.keys(parsed).length > 0;
+    } catch {}
+    return true;
+  }
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === "object") return Object.keys(value).length > 0;
+  return true;
+}
+
+const STRICT_COMPLETE_FIELDS = {
+  1: [
+    "ho_ten", "so_ho_so", "ngay_sinh", "gioi_tinh", "nghe_nghiep", "dia_chi", "hoc_van", "dan_toc",
+    "ngay_nhap_vien", "ngay_pt_du_kien", "can_nang", "chieu_cao", "chan_doan", "loai_pt", "vung_pt", "pp_pt", "vo_cam", "vas_nhap_vien"
+  ],
+  2: [
+    "hads_1", "hads_2", "hads_3", "hads_4", "hads_5", "hads_6", "hads_7", "hads_8", "hads_9", "hads_10", "hads_11", "hads_12", "hads_13", "hads_14",
+    "psqi1", "psqi2", "psqi3", "psqi4", "psqi5a", "psqi_5_0", "psqi_5_1", "psqi_5_2", "psqi_5_3", "psqi_5_4", "psqi_5_5", "psqi_5_6", "psqi_5_7", "psqi_5_8",
+    "psqi6", "psqi7", "psqi8", "psqi9", "ais_1", "ais_2", "ais_3", "ais_4", "ais_5"
+  ],
+  3: [
+    "ngay_pt_thuc", "tg_pt", "pp_pt_thuc", "vo_cam_thuc", "mat_mau", "truyen_mau",
+    "vas1", "vas2", "vas3", "thuoc_ngay_1", "thuoc_ngay_2", "thuoc_ngay_3",
+    "van_dong", "kha_nang_vd", "bien_chung", "tg_nam_vien", "hl_0", "hl_1", "hl_2", "hl_3", "hl_4"
+  ],
+};
+
+const STRICT_COMPLETE_FIELD_LABELS = {
+  ho_ten: "Họ tên bệnh nhân",
+  so_ho_so: "Mã BN",
+  ngay_sinh: "Ngày sinh",
+  gioi_tinh: "Giới tính",
+  nghe_nghiep: "Nghề nghiệp",
+  dia_chi: "Địa chỉ",
+  hoc_van: "Học vấn",
+  dan_toc: "Dân tộc",
+  ngay_nhap_vien: "Ngày nhập viện",
+  ngay_pt_du_kien: "Ngày phẫu thuật dự kiến",
+  can_nang: "Cân nặng",
+  chieu_cao: "Chiều cao",
+  chan_doan: "Chẩn đoán",
+  loai_pt: "Loại phẫu thuật",
+  vung_pt: "Vùng phẫu thuật",
+  pp_pt: "Phương pháp phẫu thuật",
+  vo_cam: "Phương pháp vô cảm",
+  vas_nhap_vien: "VAS lúc nhập viện",
+  tg_pt: "Thời gian phẫu thuật",
+  pp_pt_thuc: "Phương pháp PT thực tế",
+  vo_cam_thuc: "Phương pháp vô cảm thực tế",
+  mat_mau: "Mất máu ước tính",
+  truyen_mau: "Truyền máu",
+  van_dong: "Tình trạng vận động",
+  kha_nang_vd: "Khả năng vận động",
+  bien_chung: "Biến chứng",
+  tg_nam_vien: "Thời gian nằm viện",
+  ngay_pt_thuc: "Ngày phẫu thuật thực tế",
+  psqi1: "PSQI-1 giờ đi ngủ",
+  psqi2: "PSQI-2 mất bao lâu để ngủ",
+  psqi3: "PSQI-3 giờ thức dậy",
+  psqi4: "PSQI-4 số giờ ngủ thực sự",
+  psqi5a: "PSQI-5a",
+  psqi6: "PSQI-6 chất lượng giấc ngủ",
+  psqi7: "PSQI-7 dùng thuốc ngủ",
+  psqi8: "PSQI-8 khó giữ tỉnh táo ban ngày",
+  psqi9: "PSQI-9 ảnh hưởng sinh hoạt",
+  thuoc_ngay_1: "Thuốc giảm đau ngày 1",
+  thuoc_ngay_2: "Thuốc giảm đau ngày 2",
+  thuoc_ngay_3: "Thuốc giảm đau ngày 3",
+};
+for (let i = 1; i <= 14; i++) STRICT_COMPLETE_FIELD_LABELS[`hads_${i}`] = `HADS câu ${i}`;
+for (let i = 0; i < 9; i++) STRICT_COMPLETE_FIELD_LABELS[`psqi_5_${i}`] = `PSQI-5${String.fromCharCode(98 + i)}`;
+for (let i = 1; i <= 5; i++) STRICT_COMPLETE_FIELD_LABELS[`ais_${i}`] = `AIS-${i}`;
+for (let i = 1; i <= 3; i++) STRICT_COMPLETE_FIELD_LABELS[`vas${i}`] = `VAS sau mổ ngày ${i}`;
+for (let i = 0; i < 5; i++) STRICT_COMPLETE_FIELD_LABELS[`hl_${i}`] = `Hài lòng câu ${i + 1}`;
+
+function getStrictCompletionMissing(record) {
+  if ((record?.buoc || 0) < 3) return ["Chưa đủ 3 bước"];
+  const missing = [];
+  Object.values(STRICT_COMPLETE_FIELDS).flat().forEach(field => {
+    if (!hasMeaningfulValue(record?.[field])) {
+      missing.push(STRICT_COMPLETE_FIELD_LABELS[field] || field);
+    }
+  });
+  return missing;
 }
 
 // Kiểm tra phiếu đã điền đủ các trường bắt buộc chưa
 function isRecordComplete(record) {
-  if ((record.buoc || 0) < 3) return false;
-  const required = [
-    // Bước 1
-    "ho_ten", "so_ho_so", "ngay_sinh", "gioi_tinh", "ngay_nhap_vien", "loai_pt", "vo_cam",
-    // Bước 2
-    "hads_1", "psqi1",
-    // Bước 3
-    "ngay_pt_thuc",
-  ];
-  return required.every(f => {
-    const v = record[f];
-    return v !== undefined && v !== null && v !== "";
-  });
+  if (record?.strict_complete !== undefined) return Boolean(record.strict_complete);
+  return getStrictCompletionMissing(record).length === 0;
 }
 
 // Trạng thái phiếu:
@@ -999,20 +1098,21 @@ function calcTongHopLocal() {
   allRecords.forEach(r => {
     tong++;
     const buoc   = Number(r.buoc || 0);
+    const completed = isRecordComplete(r);
     const loaiPT = String(r.loai_pt || "").trim();
-    if (buoc >= 3)      hoan_thanh++;
+    if (completed)     hoan_thanh++;
     else if (buoc >= 2) dang_dien++;
     else                moi++;
     const dtv = String(r.dieu_tra_vien || r.user || "").trim();
     if (dtv) {
       if (!dtvMap[dtv]) dtvMap[dtv] = { ten: dtv, tong: 0, hoan_thanh: 0 };
       dtvMap[dtv].tong++;
-      if (buoc >= 3) dtvMap[dtv].hoan_thanh++;
+      if (completed) dtvMap[dtv].hoan_thanh++;
     }
     if (loaiPT) {
       if (!loaiMap[loaiPT]) loaiMap[loaiPT] = { ten: loaiPT, tong: 0, hoan_thanh: 0 };
       loaiMap[loaiPT].tong++;
-      if (buoc >= 3) loaiMap[loaiPT].hoan_thanh++;
+      if (completed) loaiMap[loaiPT].hoan_thanh++;
     }
   });
   const theo_dtv    = Object.values(dtvMap).sort((a, b) => b.tong - a.tong);
@@ -1215,10 +1315,11 @@ function renderDashboard() {
     return matchQ && matchF && matchOwner;
   });
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const effectivePageSize = dashboardPageSize === -1 ? Math.max(filtered.length || 1, 1) : dashboardPageSize;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / effectivePageSize));
   dashboardPage = Math.min(dashboardPage, totalPages);
-  const pageStart = (dashboardPage - 1) * PAGE_SIZE;
-  const pageRecords = filtered.slice(pageStart, pageStart + PAGE_SIZE);
+  const pageStart = (dashboardPage - 1) * effectivePageSize;
+  const pageRecords = filtered.slice(pageStart, pageStart + effectivePageSize);
 
   const mineCount = allRecords.filter(isRecordOwner).length;
   document.getElementById("stat-grid").innerHTML = `
@@ -1234,6 +1335,7 @@ function renderDashboard() {
     const isOwner = isRecordOwner(record);
     const duplicates = findDuplicateRecords(record, record.ma_phieu);
     const detailText = [record.chan_doan, record.loai_pt, record.vung_pt].filter(Boolean).join(" · ");
+    const missingStrict = !isRecordComplete(record) && Number(record.buoc || 0) >= 3 ? getStrictCompletionMissing(record) : [];
     const metaParts = [];
     if (record.so_ho_so) metaParts.push(`BN ${escapeHtml(record.so_ho_so)}`);
     if (dtv) metaParts.push(`Người tạo ${escapeHtml(dtv)}`);
@@ -1242,10 +1344,11 @@ function renderDashboard() {
       <div class="phieu-item phieu-compact ${isOwner ? "is-mine" : "is-other"}">
         <div class="phieu-main">
           <div class="phieu-topline">
-            <div class="phieu-name">${escapeHtml(record.ho_ten || "(Chưa có tên bệnh nhân)")}</div>
+            <div class="phieu-name">${escapeHtml(formatPatientName(record.ho_ten))}</div>
             <div class="phieu-chipline">
               <span class="badge ${status.cls}">${escapeHtml(status.text)}</span>
               <span class="badge ${isOwner ? "badge-green" : "badge-gray"}">${isOwner ? "Của tôi" : "Người khác"}</span>
+              ${missingStrict.length ? `<span class="badge badge-gray" title="Thiếu: ${escapeHtml(missingStrict.slice(0, 8).join(", "))}${missingStrict.length > 8 ? "..." : ""}">Thiếu ${missingStrict.length} mục</span>` : ""}
             </div>
           </div>
           <div class="phieu-meta-line">${metaParts.join('<span class="sep">•</span>') || 'Chưa có thông tin phụ'}</div>
@@ -1272,12 +1375,21 @@ function renderDashboard() {
       <button class="btn btn-sm" onclick="changePage(${dashboardPage - 1})" ${dashboardPage <= 1 ? "disabled" : ""}>← Trước</button>
       <span class="page-info">Trang ${dashboardPage} / ${totalPages} &nbsp;·&nbsp; ${filtered.length} phiếu</span>
       <button class="btn btn-sm" onclick="changePage(${dashboardPage + 1})" ${dashboardPage >= totalPages ? "disabled" : ""}>Tiếp →</button>
-    </div>` : filtered.length > 0 ? `<div class="page-info-simple">${filtered.length} phiếu</div>` : "";
+    </div>` : filtered.length > 0 ? `<div class="page-info-simple">${dashboardPageSize === -1 ? `Hiển thị toàn bộ ${filtered.length} phiếu` : `${filtered.length} phiếu`}</div>` : "";
 
   document.getElementById("phieu-list").innerHTML = `
     <div class="dashboard-tools dashboard-tools-compact">
       <div class="dashboard-search"><input id="dash-search" type="search" placeholder="Tìm theo tên, mã BN, mã phiếu, người tạo..." value="${escapeHtml(dashboardQuery)}"></div>
       <div class="dashboard-filter-row">
+        <div class="dash-limit-wrap">
+          <label for="dash-page-size">Hiển thị</label>
+          <select id="dash-page-size" class="dash-limit-select">
+            <option value="20" ${dashboardPageSize === 20 ? "selected" : ""}>20 phiếu</option>
+            <option value="50" ${dashboardPageSize === 50 ? "selected" : ""}>50 phiếu</option>
+            <option value="100" ${dashboardPageSize === 100 ? "selected" : ""}>100 phiếu</option>
+            <option value="-1" ${dashboardPageSize === -1 ? "selected" : ""}>Toàn bộ</option>
+          </select>
+        </div>
         <div class="segmented" id="dash-owner-segmented">
           <button data-owner="all" class="${dashboardOwnerFilter === "all" ? "active" : ""}">Tất cả</button>
           <button data-owner="mine" class="${dashboardOwnerFilter === "mine" ? "active" : ""}">Của tôi</button>
@@ -1314,6 +1426,13 @@ function renderDashboard() {
       renderDashboard();
     });
   });
+  document.getElementById("dash-page-size")?.addEventListener("change", e => {
+    const nextSize = parseInt(e.target.value, 10);
+    dashboardPageSize = [20, 50, 100, -1].includes(nextSize) ? nextSize : 20;
+    localStorage.setItem(DASH_PAGE_SIZE_KEY, String(dashboardPageSize));
+    dashboardPage = 1;
+    renderDashboard();
+  });
 }
 
 function changePage(page) {
@@ -1332,7 +1451,8 @@ function changePage(page) {
       || (dashboardOwnerFilter === "others" && !owner);
     return matchQ && matchF && matchOwner;
   });
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const effectivePageSize = dashboardPageSize === -1 ? Math.max(filtered.length || 1, 1) : dashboardPageSize;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / effectivePageSize));
   dashboardPage = Math.max(1, Math.min(page, totalPages));
   renderDashboard();
 }
@@ -1617,6 +1737,7 @@ function applyFormData(data = {}) {
     const el = document.getElementById(id);
     if (!el || data[field] === undefined || data[field] === null || data[field] === "") return;
     let val = normalizeDateForInput(field, data[field]);
+    if (field === "ho_ten") val = normalizePatientName(val);
     // Float → int cho các select dùng option value số nguyên
     if (INT_FIELDS.has(field) && val !== "" && val !== null) val = String(parseInt(val, 10));
     el.value = val;
@@ -1727,7 +1848,7 @@ function collectStep(n) {
   };
 
   if (n === 1) return {
-    ho_ten:         getText("f_ten"),
+    ho_ten:         normalizePatientName(getText("f_ten")),
     so_ho_so:       getText("f_hoSo"),
     ngay_sinh:      getText("f_ngaySinh"),
     gioi_tinh:      getText("f_gioi"),
@@ -1949,7 +2070,7 @@ function buildStep1() {
   <div class="card">
     <div class="card-title">A1. Thông tin hành chính</div>
     <div class="form-row">
-      <div class="form-group"><label>Họ và tên bệnh nhân <span class="req">*</span></label><input id="f_ten" placeholder="Nguyễn Văn A"></div>
+      <div class="form-group"><label>Họ và tên bệnh nhân <span class="req">*</span></label><input id="f_ten" placeholder="NGUYỄN VĂN A" style="text-transform:uppercase" onblur="this.value = normalizePatientName(this.value)"></div>
       <div class="form-group"><label>Mã BN <span class="req">*</span></label><input id="f_hoSo" placeholder="BN-2024-001"></div>
     </div>
     <div class="form-row">
