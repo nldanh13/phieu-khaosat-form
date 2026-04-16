@@ -1702,28 +1702,91 @@ const FIELD_ID_MAP = {
 
 const DATE_FIELDS = new Set(["ngay_sinh","ngay_nhap_vien","ngay_pt_du_kien","ngay_pt_thuc"]);
 const TIME_FIELDS = new Set(["psqi1","psqi3"]);
+const VN_TIME_ZONE = "Asia/Ho_Chi_Minh";
+
+function isIsoLikeString(s) {
+  return /^\d{4}-\d{2}-\d{2}T/.test(String(s || "").trim());
+}
+
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+
+function formatDateInVN(date) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: VN_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const get = type => parts.find(p => p.type === type)?.value || "";
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+function formatTimeInVN(date) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: VN_TIME_ZONE,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+  const get = type => parts.find(p => p.type === type)?.value || "00";
+  return `${get("hour")}:${get("minute")}`;
+}
 
 function normalizeDateForInput(field, value) {
   if (!value && value !== 0) return value;
-  const s = String(value);
+  const s = String(value).trim();
 
-  // Trường giờ (HH:MM) — Sheets biến "22:30" → ISO datetime
+  // Trường giờ (HH:MM)
   if (TIME_FIELDS.has(field)) {
-    // ISO datetime "2026-04-06T22:30:00+07:00" → lấy "HH:MM" từ phần T
-    const tMatch = s.match(/T(\d{2}:\d{2})/);
-    if (tMatch) return tMatch[1];
-    // Đã đúng dạng HH:MM rồi
     if (/^\d{2}:\d{2}$/.test(s)) return s;
+    if (/^\d{2}:\d{2}:\d{2}$/.test(s)) return s.slice(0, 5);
+    if (isIsoLikeString(s)) {
+      const d = new Date(s);
+      if (!isNaN(d)) return formatTimeInVN(d);
+    }
     return value;
   }
 
   // Trường ngày (YYYY-MM-DD)
   if (DATE_FIELDS.has(field)) {
-    const tIdx = s.indexOf("T");
-    if (tIdx > 0) return s.slice(0, tIdx);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    if (isIsoLikeString(s)) {
+      const d = new Date(s);
+      if (!isNaN(d)) return formatDateInVN(d);
+    }
     const dmyMatch = s.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
     if (dmyMatch) return `${dmyMatch[3]}-${dmyMatch[2]}-${dmyMatch[1]}`;
     return value;
+  }
+
+  return value;
+}
+
+function normalizeValueForSubmit(field, value) {
+  if (value === undefined || value === null || value === "") return value;
+  const s = String(value).trim();
+
+  if (TIME_FIELDS.has(field)) {
+    if (/^\d{2}:\d{2}$/.test(s)) return s;
+    if (/^\d{2}:\d{2}:\d{2}$/.test(s)) return s.slice(0, 5);
+    if (isIsoLikeString(s)) {
+      const d = new Date(s);
+      if (!isNaN(d)) return formatTimeInVN(d);
+    }
+    return s;
+  }
+
+  if (DATE_FIELDS.has(field)) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    if (isIsoLikeString(s)) {
+      const d = new Date(s);
+      if (!isNaN(d)) return formatDateInVN(d);
+    }
+    const dmyMatch = s.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+    if (dmyMatch) return `${dmyMatch[3]}-${dmyMatch[2]}-${dmyMatch[1]}`;
+    return s;
   }
 
   return value;
@@ -1850,14 +1913,14 @@ function collectStep(n) {
   if (n === 1) return {
     ho_ten:         normalizePatientName(getText("f_ten")),
     so_ho_so:       getText("f_hoSo"),
-    ngay_sinh:      getText("f_ngaySinh"),
+    ngay_sinh:      normalizeValueForSubmit("ngay_sinh", getText("f_ngaySinh")),
     gioi_tinh:      getText("f_gioi"),
     nghe_nghiep:    getText("f_ngheNghiep"),
     dia_chi:        getText("f_diaChi"),
     hoc_van:        getText("f_hocVan"),
     dan_toc:        getText("f_danToc"),
-    ngay_nhap_vien: getText("f_ngayNhapVien"),
-    ngay_pt_du_kien: getText("f_ngayPT"),
+    ngay_nhap_vien: normalizeValueForSubmit("ngay_nhap_vien", getText("f_ngayNhapVien")),
+    ngay_pt_du_kien: normalizeValueForSubmit("ngay_pt_du_kien", getText("f_ngayPT")),
     can_nang:       getNum("f_canNang"),
     chieu_cao:      getNum("f_chieuCao"),
     chan_doan:      getText("f_chanDoan"),
@@ -1872,8 +1935,8 @@ function collectStep(n) {
   if (n === 2) {
     const d = {};
     for (let i = 1; i <= 14; i++) d[`hads_${i}`] = radio(`hads_${i}`);
-    d.psqi1  = getText("f_psqi1");
-    d.psqi3  = getText("f_psqi3");
+    d.psqi1  = normalizeValueForSubmit("psqi1", getText("f_psqi1"));
+    d.psqi3  = normalizeValueForSubmit("psqi3", getText("f_psqi3"));
     d.psqi2  = getNum("f_psqi2");
     d.psqi4  = getNum("f_psqi4");
     d.psqi5a = getText("f_psqi5a") !== "" ? getNum("f_psqi5a") : null;
@@ -1895,7 +1958,7 @@ function collectStep(n) {
   }
 
   if (n === 3) return {
-    ngay_pt_thuc:  getText("f_ngayPTthuc"),
+    ngay_pt_thuc:  normalizeValueForSubmit("ngay_pt_thuc", getText("f_ngayPTthuc")),
     tg_pt:         getNum("f_tgPT"),
     pp_pt_thuc:    getText("f_ppPTthuc"),
     vo_cam_thuc:   getText("f_voCamThuc"),
