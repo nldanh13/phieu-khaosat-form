@@ -13,27 +13,24 @@
 
 // ── Config (đọc từ auth-config.js) ──────────────────────────
 const API_URL = window.APP_AUTH?.apiUrl || "";
+const USERS   = window.APP_AUTH?.users  || {};
+
 if (!API_URL) console.error("[Config] apiUrl chưa được thiết lập trong auth-config.js");
 
 // ── API helpers ──────────────────────────────────────────────
 function buildApiUrl(action = "", params = {}) {
   const url = new URL(API_URL);
   if (action) url.searchParams.set("action", action);
-  const mergedParams = { ...(params || {}) };
-  if (!mergedParams.auth_token && currentUser?.token) mergedParams.auth_token = currentUser.token;
-  Object.entries(mergedParams).forEach(([k, v]) => {
+  Object.entries(params || {}).forEach(([k, v]) => {
     if (v !== undefined && v !== null && v !== "") url.searchParams.set(k, v);
   });
   return url.toString();
 }
 
 async function apiGet(action = "", params = {}) {
-  const res = await fetch(buildApiUrl(action, params), { cache: "no-store" });
+  const res = await fetch(buildApiUrl(action, params));
   let data = null;
   try { data = await res.json(); } catch { throw new Error("API trả về dữ liệu không hợp lệ"); }
-  if (data && typeof data === "object" && data.success === false) {
-    throw new Error(data.error || "API trả về lỗi");
-  }
   if (!res.ok) throw new Error(data?.error || ("Lỗi " + res.status));
   return data;
 }
@@ -47,50 +44,42 @@ function trimPayload(payload) {
   return out;
 }
 
-async function apiAction(action, payload = {}, allowGetFallback = false) {
-  const cleanPayload = trimPayload({ action, ...(payload || {}) });
-  if (!cleanPayload.auth_token && currentUser?.token && action !== "login") {
-    cleanPayload.auth_token = currentUser.token;
-  }
-  const jsonBody = JSON.stringify(cleanPayload);
-  console.log(`[apiAction] ${action} payload size:`, jsonBody.length, "chars");
+async function apiPost(payload) {
+  // Chiến lược: thử POST text/plain trước (không trigger preflight, không bị giới hạn URL)
+  // Nếu POST bị CORS block → fallback về GET với data chunk nhỏ
+  const jsonBody = JSON.stringify(trimPayload(payload));
+  console.log("[apiPost] payload size:", jsonBody.length, "chars | buoc:", payload.buoc, "| ma:", payload.ma_phieu);
 
   try {
     const res = await fetch(API_URL, {
       method: "POST",
-      body: jsonBody,
+      body:   jsonBody,
+      // KHÔNG set Content-Type header → browser gửi text/plain → không trigger preflight
     });
     const text = await res.text();
-    console.log(`[apiAction] ${action} POST response:`, text?.slice(0, 200));
+    console.log("[apiPost] POST response:", text?.slice(0, 200));
     if (!text?.trim()) throw new Error("Server không trả về dữ liệu");
     const data = JSON.parse(text);
-    if (data?.success === false) throw new Error(data.error || "Server trả về lỗi");
+    if (!data?.success) throw new Error(data?.error || "Server trả về lỗi");
+    console.log("[apiPost] POST success:", data);
     return data;
   } catch (postErr) {
-    if (!allowGetFallback) throw postErr;
-    console.warn(`[apiAction] ${action} POST failed:`, postErr.message, "— thử GET fallback");
-    const fallbackParams = action === "save" ? { data: jsonBody } : { ...(payload || {}) };
-    if (!fallbackParams.auth_token && currentUser?.token && action !== "login") {
-      fallbackParams.auth_token = currentUser.token;
-    }
-    const urlStr = buildApiUrl(action, fallbackParams);
-    if (urlStr.length > 7500) throw new Error(`Payload quá lớn cho GET (${urlStr.length} ký tự). Lỗi POST: ${postErr.message}`);
-    const res2 = await fetch(urlStr, { method: "GET", cache: "no-store" });
+    // POST thất bại (CORS hoặc lỗi khác) → fallback GET
+    console.warn("[apiPost] POST failed:", postErr.message, "— thử GET fallback");
+    const url = new URL(API_URL);
+    url.searchParams.set("action", "save");
+    url.searchParams.set("data", jsonBody);
+    const urlStr = url.toString();
+    console.log("[apiPost] GET URL length:", urlStr.length);
+    if (urlStr.length > 7500) throw new Error("Payload quá lớn cho GET (" + urlStr.length + " ký tự). Lỗi POST: " + postErr.message);
+    const res2 = await fetch(urlStr, { method: "GET" });
     const text2 = await res2.text();
-    console.log(`[apiAction] ${action} GET response:`, text2?.slice(0, 200));
+    console.log("[apiPost] GET response:", text2?.slice(0, 200));
     if (!text2?.trim()) throw new Error("Server không trả về dữ liệu (GET fallback)");
     const data2 = JSON.parse(text2);
-    if (data2?.success === false) throw new Error(data2.error || "Server lỗi (GET)");
+    if (!data2?.success) throw new Error(data2?.error || "Server lỗi (GET)");
     return data2;
   }
-}
-
-async function apiPost(payload) {
-  return apiAction("save", payload, true);
-}
-
-async function apiLogin(username, password) {
-  return apiAction("login", { username, password }, true);
 }
 
 // ── State ────────────────────────────────────────────────────
@@ -107,7 +96,6 @@ let dashboardOwnerFilter = "all";
 let dashboardQuery     = "";
 let draftSaveTimer     = null;
 let dashboardPage      = 1;
-let bulkSyncing        = false;
 let formDirty          = false; // true khi user đã thay đổi ít nhất 1 trường
 let viewMode           = false; // true = chế độ xem (read-only)
 let dashboardPageSize  = parseInt(localStorage.getItem("phieu_dash_page_size_v1") || "20", 10);
@@ -123,58 +111,22 @@ function getMucTieu()    { return parseInt(localStorage.getItem(MUC_TIEU_KEY) ||
 function setMucTieu(n)   { localStorage.setItem(MUC_TIEU_KEY, String(n)); }
 
 // ── Auth ─────────────────────────────────────────────────────
-const SESSION_KEY = "phieu_session_v2";
+const SESSION_KEY = "phieu_session_v1";
 
 function saveSession(user) {
-  const payload = {
-    token: user.token,
-    expires_at: user.expires_at || "",
-    user: {
-      username: user.username || "",
-      name: user.name || user.username || "",
-      role: user.role || "investigator",
-    },
-    ts: Date.now(),
-  };
-  localStorage.setItem(SESSION_KEY, JSON.stringify(payload));
+  localStorage.setItem(SESSION_KEY, JSON.stringify({ username: user.username, ts: Date.now() }));
 }
 
 function loadSession() {
   try {
     const s = JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
-    if (!s?.token || !s?.user?.username) return null;
-    return { ...s.user, token: s.token, expires_at: s.expires_at || "" };
+    if (!s?.username || !USERS[s.username]) return null;
+    return { username: s.username, ...USERS[s.username] };
   } catch { return null; }
 }
 
 function clearSession() {
   localStorage.removeItem(SESSION_KEY);
-}
-
-function isAdminUser(user = currentUser) {
-  return String(user?.role || "").toLowerCase() === "admin";
-}
-
-function getFriendlyErrorMessage(err) {
-  const raw = String(err?.message || err || "");
-  return raw.startsWith("AUTH:") ? raw.replace(/^AUTH:\s*/, "") : raw;
-}
-
-function isAuthError(err) {
-  return String(err?.message || err || "").startsWith("AUTH:");
-}
-
-function handleAuthError(err, alertId) {
-  if (!isAuthError(err)) return false;
-  const msg = getFriendlyErrorMessage(err) || "Phiên đăng nhập không hợp lệ. Vui lòng đăng nhập lại.";
-  doLogout(true);
-  const loginAlert = document.getElementById("login-alert");
-  if (loginAlert) {
-    loginAlert.textContent = msg;
-    loginAlert.classList.remove("hidden");
-  }
-  if (alertId) showAlert(alertId, msg, "error");
-  return true;
 }
 
 function updateAvatar(user) {
@@ -188,11 +140,11 @@ function updateAvatar(user) {
     const initials = (user.name || user.username || "?").slice(0, 2).toUpperCase();
     ini.textContent = initials;
     nm.textContent  = user.name || user.username;
-    rl.textContent  = isAdminUser(user) ? "Quản trị viên" : "Điều tra viên";
+    rl.textContent  = user.role === "admin" ? "Quản trị viên" : "Điều tra viên";
     wrap.style.display = "flex";
     wrap.style.alignItems = "center";
     // Màu avatar khác nhau theo role
-    btn.style.background = isAdminUser(user) ? "var(--primary)" : "var(--teal-600,#0f6e56)";
+    btn.style.background = user.role === "admin" ? "var(--primary)" : "var(--teal-600,#0f6e56)";
   } else {
     wrap.style.display = "none";
   }
@@ -216,41 +168,22 @@ function toggleAvatarMenu() {
   }
 }
 
-async function doLogin() {
+function doLogin() {
   const u  = document.getElementById("inp-user").value.trim();
   const p  = document.getElementById("inp-pass").value;
   const el = document.getElementById("login-alert");
-  const btn = document.querySelector('#screen-login button.btn.btn-primary');
-
-  if (!u || !p) {
-    el.textContent = "Vui lòng nhập đầy đủ tên đăng nhập và mật khẩu.";
+  if (!USERS[u] || USERS[u].pass !== p) {
+    el.textContent = "Sai tên đăng nhập hoặc mật khẩu.";
     el.classList.remove("hidden");
     return;
   }
-
-  try {
-    if (btn) btn.disabled = true;
-    el.classList.add("hidden");
-    const res = await apiLogin(u, p);
-    currentUser = {
-      ...(res?.user || {}),
-      token: res?.token || "",
-      expires_at: res?.expires_at || "",
-    };
-    if (!currentUser.username || !currentUser.token) {
-      throw new Error("Phản hồi đăng nhập không hợp lệ.");
-    }
-    saveSession(currentUser);
-    updateAvatar(currentUser);
-    resetIdleTimer();
-    showScreen("dash");
-    loadDanhSach();
-  } catch (err) {
-    el.textContent = getFriendlyErrorMessage(err) || "Sai tên đăng nhập hoặc mật khẩu.";
-    el.classList.remove("hidden");
-  } finally {
-    if (btn) btn.disabled = false;
-  }
+  currentUser = { username: u, ...USERS[u] };
+  el.classList.add("hidden");
+  saveSession(currentUser);
+  updateAvatar(currentUser);
+  resetIdleTimer();
+  showScreen("dash");
+  loadDanhSach();
 }
 
 function doLogout(silent = false) {
@@ -412,33 +345,6 @@ function upsertLocalDraft(record) {
   setLocalDraftMap(m);
 }
 
-
-function getOwnedLocalDraftsForSync() {
-  const me = normalizeText(getCurrentUserName());
-  return listLocalDrafts().filter(item => {
-    if (!item?.ma_phieu) return false;
-    const owner = normalizeText(item.user || item.data?.dieu_tra_vien || "");
-    if (me && owner && owner !== me) return false;
-    return Boolean(item.local_only || !item.synced);
-  });
-}
-
-function refreshBulkSyncButton() {
-  const btn = document.getElementById("btn-sync-drafts");
-  if (!btn) return;
-  const count = getOwnedLocalDraftsForSync().length;
-  btn.style.display = currentUser ? "inline-flex" : "none";
-  btn.disabled = bulkSyncing || count === 0;
-  btn.textContent = bulkSyncing
-    ? "⏳ Đang lưu nháp..."
-    : count > 0
-      ? `💾 Lưu ${count} nháp`
-      : "💾 Không có nháp";
-  btn.title = count > 0
-    ? `Lưu ${count} phiếu nháp của bạn lên Google Sheets, kể cả phiếu chưa hoàn chỉnh`
-    : "Không có phiếu nháp nào cần lưu";
-}
-
 function hasRemoteRecord(ma) {
   return danhSachCache.some(item => item.ma_phieu === ma);
 }
@@ -564,7 +470,7 @@ const STRICT_COMPLETE_FIELDS = {
     "psqi6", "psqi7", "psqi8", "psqi9", "ais_1", "ais_2", "ais_3", "ais_4", "ais_5"
   ],
   3: [
-    "ngay_pt_thuc", "tg_pt", "pp_pt_thuc", "vo_cam_thuc", "truyen_mau",
+    "ngay_pt_thuc", "tg_pt", "pp_pt_thuc", "vo_cam_thuc", "mat_mau", "truyen_mau",
     "vas1", "vas2", "vas3", "thuoc_ngay_1", "thuoc_ngay_2", "thuoc_ngay_3",
     "van_dong", "kha_nang_vd", "bien_chung", "tg_nam_vien", "hl_0", "hl_1", "hl_2", "hl_3", "hl_4"
   ],
@@ -592,6 +498,7 @@ const STRICT_COMPLETE_FIELD_LABELS = {
   tg_pt: "Thời gian phẫu thuật",
   pp_pt_thuc: "Phương pháp PT thực tế",
   vo_cam_thuc: "Phương pháp vô cảm thực tế",
+  mat_mau: "Mất máu ước tính",
   truyen_mau: "Truyền máu",
   van_dong: "Tình trạng vận động",
   kha_nang_vd: "Khả năng vận động",
@@ -827,7 +734,7 @@ async function nextStep()  {
     markLocalSynced();
     updateFooterStatus(`Đã lưu hệ thống lúc ${formatWhen(new Date().toISOString())}`);
   }).catch(e => {
-    updateFooterStatus(`⚠ Chưa lưu lên server (${getFriendlyErrorMessage(e)}) — nháp đã giữ trên máy`);
+    updateFooterStatus(`⚠ Chưa lưu lên server (${e.message}) — nháp đã giữ trên máy`);
   });
 }
 
@@ -881,7 +788,7 @@ async function finishForm() {
     }, 900);
   } catch (e) {
     showAlert("form-alert",
-      `Không lưu được lên server (${getFriendlyErrorMessage(e)}). Phiếu đã lưu nháp trên máy — vui lòng thử lại khi có mạng.`,
+      `Không lưu được lên server (${e.message}). Phiếu đã lưu nháp trên máy — vui lòng thử lại khi có mạng.`,
       "error"
     );
   } finally {
@@ -903,10 +810,10 @@ const STEP2_FIELDS = new Set([
   "psqi_5_5","psqi_5_6","psqi_5_7","psqi_5_8",
   "psqi7","psqi8","psqi9","psqi5j_text",
   "ais_1","ais_2","ais_3","ais_4","ais_5","ais_tong","ais_phanloai",
-  "nguyen_nhan_lo_au","nguyen_nhan_lo_au_khac","nguyen_nhan_rlgn","nguyen_nhan_rlgn_khac",
+  "nguyen_nhan_lo_au","nguyen_nhan_rlgn",
 ]);
 const STEP3_FIELDS = new Set([
-  "ngay_pt_thuc","tg_pt","pp_pt_thuc","vo_cam_thuc","truyen_mau",
+  "ngay_pt_thuc","tg_pt","pp_pt_thuc","vo_cam_thuc","mat_mau","truyen_mau",
   "vas1","vas2","vas3","van_dong","kha_nang_vd","bien_chung","tg_nam_vien",
   "thuoc_ngay_1","thuoc_ngay_2","thuoc_ngay_3",
   // backward-compat với phiếu cũ
@@ -934,185 +841,6 @@ function detectChangedSteps(current, snapshot) {
     else if (STEP3_FIELDS.has(k)) changed.add(3);
   }
   return changed;
-}
-
-
-function getStepValidationErrorsFromData(step, data) {
-  const errors = [];
-  const has = key => hasMeaningfulValue(data?.[key]);
-
-  if (step === 1) {
-    if (!has("ho_ten"))          errors.push("Họ và tên bệnh nhân");
-    if (!has("so_ho_so"))        errors.push("Mã BN");
-    if (!has("ngay_sinh"))       errors.push("Ngày sinh");
-    if (!has("gioi_tinh"))       errors.push("Giới tính");
-    if (!has("ngay_nhap_vien"))  errors.push("Ngày nhập viện");
-    if (!has("loai_pt"))         errors.push("Loại phẫu thuật");
-    if (!has("vo_cam"))          errors.push("Phương pháp vô cảm");
-  }
-
-  if (step === 2) {
-    const missingHads = [];
-    for (let i = 1; i <= 14; i++) {
-      if (!has(`hads_${i}`)) missingHads.push(i);
-    }
-    if (missingHads.length) errors.push(`Chưa đủ HADS: ${missingHads.join(", ")}`);
-    if (!has("psqi1")) errors.push("PSQI-1");
-    if (!has("psqi3")) errors.push("PSQI-3");
-  }
-
-  if (step === 3) {
-    if (!has("ngay_pt_thuc")) errors.push("Ngày phẫu thuật thực tế");
-  }
-
-  return errors;
-}
-
-function getCandidateStepsFromData(data) {
-  const found = new Set();
-  Object.entries(data || {}).forEach(([key, value]) => {
-    if (key === "ma_phieu" || !hasMeaningfulValue(value)) return;
-    if (STEP1_FIELDS.has(key)) found.add(1);
-    else if (STEP2_FIELDS.has(key)) found.add(2);
-    else if (STEP3_FIELDS.has(key)) found.add(3);
-  });
-  return [1, 2, 3].filter(step => found.has(step));
-}
-
-async function syncSingleLocalDraft(draft) {
-  const ma = String(draft?.ma_phieu || "").trim();
-  if (!ma) return { ma_phieu: "", syncedSteps: [], skipped: [{ step: 0, reason: "Thiếu mã phiếu" }], failed: [] };
-
-  const actor = getCurrentUserName();
-  const data = { ...(draft?.data || {}), ma_phieu: ma };
-  let remoteExists = hasRemoteRecord(ma);
-  let snapshot = {};
-
-  if (remoteExists) {
-    try {
-      const full = await fetchFullRecordCached(ma, { force: true });
-      snapshot = full?.data || {};
-    } catch {
-      snapshot = getMergedRecordByMa(ma) || {};
-    }
-  }
-
-  let orderedSteps = remoteExists
-    ? [1, 2, 3].filter(step => detectChangedSteps(data, snapshot).includes(step))
-    : getCandidateStepsFromData(data);
-
-  if (!orderedSteps.length) {
-    orderedSteps = [1];
-  }
-  if (!remoteExists && orderedSteps.some(step => step > 1) && !orderedSteps.includes(1)) {
-    orderedSteps = [1, ...orderedSteps];
-  }
-  orderedSteps = [...new Set(orderedSteps)].sort((a, b) => a - b);
-
-  const syncedSteps = [];
-  const skipped = [];
-  const failed = [];
-  let highestSavedStep = Number(draft?.buoc || 0) || 0;
-
-  for (const step of orderedSteps) {
-    try {
-      await apiPost({ ...data, buoc: step, dieu_tra_vien: actor, updated_by: actor });
-      syncedSteps.push(step);
-      highestSavedStep = Math.max(highestSavedStep, step);
-      remoteExists = true;
-      snapshot = { ...snapshot, ...data, ma_phieu: ma, buoc: Math.max(Number(snapshot?.buoc || 0), step) };
-    } catch (err) {
-      failed.push({ step, reason: getFriendlyErrorMessage(err) });
-      if (step === 1 && !remoteExists) break;
-    }
-  }
-
-  const fullySynced = failed.length === 0;
-  const nextDraft = {
-    ...(getLocalDraft(ma) || draft || {}),
-    ma_phieu: ma,
-    buoc: highestSavedStep || Number(draft?.buoc || 0) || 1,
-    last_step: Math.max(Number(draft?.last_step || 1), highestSavedStep || 1),
-    updated_at: new Date().toISOString(),
-    local_only: !remoteExists,
-    synced: fullySynced,
-    user: actor || draft?.user || "",
-    data,
-  };
-
-  const mergedForCompletion = { ...snapshot, ...data, ma_phieu: ma, buoc: Math.max(Number(snapshot?.buoc || 0), highestSavedStep || 0) };
-  const canRemoveLocal = fullySynced && remoteExists && getStrictCompletionMissing(mergedForCompletion).length === 0;
-
-  let removed = false;
-  if (canRemoveLocal) {
-    removeLocalDraft(ma);
-    removed = true;
-  } else {
-    upsertLocalDraft(nextDraft);
-  }
-
-  return { ma_phieu: ma, syncedSteps, skipped, failed, noChanges: false, removed };
-}
-
-async function syncAllLocalDrafts() {
-  if (bulkSyncing) return;
-  const drafts = getOwnedLocalDraftsForSync();
-  if (!drafts.length) {
-    showAlert("dash-alert", "Không có phiếu nháp nào cần cập nhật.", "info");
-    refreshBulkSyncButton();
-    return;
-  }
-
-  const ok = window.confirm(`Lưu ${drafts.length} phiếu nháp của bạn lên Google Sheets? Phiếu chưa hoàn chỉnh vẫn sẽ được lưu phần dữ liệu đã nhập.`);
-  if (!ok) return;
-
-  bulkSyncing = true;
-  refreshBulkSyncButton();
-  showAlert("dash-alert", `Đang lưu ${drafts.length} phiếu nháp...`, "info");
-
-  const results = [];
-  try {
-    for (let i = 0; i < drafts.length; i++) {
-      const draft = drafts[i];
-      showAlert("dash-alert", `Đang lưu ${i + 1}/${drafts.length}: ${draft.ma_phieu}`, "info");
-      try {
-        const result = await syncSingleLocalDraft(draft);
-        results.push(result);
-      } catch (err) {
-        if (handleAuthError(err, "dash-alert")) return;
-        results.push({ ma_phieu: draft.ma_phieu, syncedSteps: [], skipped: [], failed: [{ step: 0, reason: getFriendlyErrorMessage(err) }], noChanges: false, removed: false });
-      }
-    }
-
-    const successCount = results.filter(r => r.syncedSteps.length > 0 || r.noChanges).length;
-    const failCount = results.filter(r => r.failed.length > 0).length;
-    const skipCount = results.filter(r => r.skipped.length > 0).length;
-    const removedCount = results.filter(r => r.removed).length;
-
-    await loadDanhSach();
-
-    const detailParts = [];
-    if (removedCount) detailParts.push(`${removedCount} phiếu hoàn tất đã tự xóa nháp local`);
-    const firstIssues = results
-      .filter(r => r.failed.length || r.skipped.length)
-      .slice(0, 3)
-      .map(r => {
-        const issue = (r.failed[0]?.reason || r.skipped[0]?.reason || "").trim();
-        return `${r.ma_phieu}: ${issue}`;
-      });
-    if (firstIssues.length) detailParts.push(firstIssues.join(" · "));
-
-    const tone = failCount > 0 ? "error" : (skipCount > 0 ? "info" : "success");
-    showAlert(
-      "dash-alert",
-      `Đã xử lý ${results.length} nháp — thành công ${successCount}, còn thiếu dữ liệu ${skipCount}, lỗi ${failCount}.${detailParts.length ? " " + detailParts.join(" | ") : ""}`,
-      tone
-    );
-  } finally {
-    bulkSyncing = false;
-    refreshBulkSyncButton();
-    renderDashboard();
-  }
 }
 
 // [FIX-UPDATE] Chỉ gửi bước nào có thay đổi so với data đã lưu trên server
@@ -1147,7 +875,7 @@ async function saveAllStepsUpdate() {
     const tasks = [...changedSteps].map(buoc =>
       apiPost({ ...newData, buoc, dieu_tra_vien: dtv, updated_by: dtv })
         .then(() => ({ buoc, ok: true }))
-        .catch(e => ({ buoc, ok: false, err: getFriendlyErrorMessage(e) }))
+        .catch(e => ({ buoc, ok: false, err: e.message }))
     );
     const results = await Promise.all(tasks);
 
@@ -1180,8 +908,7 @@ async function saveAllStepsUpdate() {
       );
     }
   } catch (e) {
-    if (handleAuthError(e, "form-alert")) return;
-    showAlert("form-alert", `Lỗi: ${getFriendlyErrorMessage(e)}`, "error");
+    showAlert("form-alert", `Lỗi: ${e.message}`, "error");
   } finally {
     showLoading(false);
   }
@@ -1250,8 +977,7 @@ async function saveCurrentStep() {
     return true;
   } catch (e) {
     showLoading(false);
-    if (handleAuthError(e, "form-alert")) return false;
-    showAlert("form-alert", "Không lưu lên hệ thống được. Dữ liệu đã được giữ dưới dạng nháp trên máy. (" + getFriendlyErrorMessage(e) + ")", "error");
+    showAlert("form-alert", "Không lưu lên hệ thống được. Dữ liệu đã được giữ dưới dạng nháp trên máy. (" + e.message + ")", "error");
     return false;
   }
 }
@@ -1324,23 +1050,21 @@ async function loadDanhSach() {
     "info"
   );
   try {
-    // Server tự lọc danh sách theo quyền của tài khoản đăng nhập
-    // Dashboard vẫn merge thêm nháp local trên máy khi cần
+    // Tất cả user đều load toàn bộ (user=all)
+    // Dashboard "Phiếu của tôi" lọc theo currentUser ở client
+    // → tab Tổng quan có đủ dữ liệu cho calcTongHopLocal fallback
     const res = await apiGet("danh-sach");
     console.log("[loadDanhSach] raw response:", JSON.stringify(res)?.slice(0, 300));
     danhSachCache = Array.isArray(res) ? res : (res.data || res.items || []);
     console.log("[loadDanhSach] cache size:", danhSachCache.length, "| first ma_phieu:", danhSachCache[0]?.ma_phieu);
     renderDashboard();
-    refreshBulkSyncButton();
     hideAlert("dash-alert");
     tongHopCache = null; // reset để tab tổng quan tự tính lại từ data mới
   } catch (e) {
-    if (handleAuthError(e, "dash-alert")) return;
     danhSachCache = Array.isArray(danhSachCache) ? danhSachCache : [];
     renderDashboard();
-    refreshBulkSyncButton();
     showAlert("dash-alert",
-      "Không kết nối được API. Vẫn có thể tiếp tục các phiếu nháp đã lưu trên máy. (" + getFriendlyErrorMessage(e) + ")",
+      "Không kết nối được API. Vẫn có thể tiếp tục các phiếu nháp đã lưu trên máy. (" + e.message + ")",
       "error"
     );
     loadTongHop(); // vẫn thử load thống kê dù danh sách lỗi
@@ -1364,8 +1088,8 @@ function switchDashTab(tab) {
 }
 
 // Tính thống kê từ danhSachCache
-// Admin: có thể thấy toàn bộ dữ liệu
-// Điều tra viên: chỉ thấy phiếu của mình
+// Admin: danhSachCache có toàn bộ → đủ số liệu
+// User thường: chỉ có phiếu của mình → hiển thị kèm ghi chú
 function calcTongHopLocal() {
   const allRecords = getManagedRecords();
   let tong = 0, hoan_thanh = 0, dang_dien = 0, moi = 0;
@@ -1417,7 +1141,8 @@ async function loadTongHop() {
   if (el) el.innerHTML = '<div class="tonghop-loading">Đang tải...</div>';
 
   try {
-    // Gọi API tổng hợp toàn hệ thống — server tự kiểm tra phiên đăng nhập
+    // Gọi API tong-hop — không cần param user, server đọc toàn bộ sheet
+    // → tất cả user đều nhận được số liệu toàn hệ thống như nhau
     const timeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error("timeout")), 12000)
     );
@@ -1427,8 +1152,7 @@ async function loadTongHop() {
     tongHopCache.source = "server";
     tongHopCache.scope  = "all";
   } catch (e) {
-    if (handleAuthError(e, "dash-alert")) return;
-    console.warn("[loadTongHop] API lỗi:", getFriendlyErrorMessage(e));
+    console.warn("[loadTongHop] API lỗi:", e.message);
     // Fallback: tính từ danhSachCache hiện có
     // Admin → đủ toàn bộ; user thường → chỉ phiếu của mình + ghi chú
     tongHopCache = calcTongHopLocal();
@@ -1598,8 +1322,6 @@ function renderDashboard() {
   const pageRecords = filtered.slice(pageStart, pageStart + effectivePageSize);
 
   const mineCount = allRecords.filter(isRecordOwner).length;
-  refreshBulkSyncButton();
-
   document.getElementById("stat-grid").innerHTML = `
     <div class="stat-card"><div class="stat-num">${allRecords.length}</div><div class="stat-lbl">Tổng phiếu</div></div>
     <div class="stat-card"><div class="stat-num">${mineCount}</div><div class="stat-lbl">Phiếu của tôi</div></div>
@@ -1759,8 +1481,7 @@ async function openRecordByMa(ma) {
       });
     } catch (e) {
       hideAlert("dash-alert");
-      if (handleAuthError(e, "dash-alert")) return;
-      showAlert("dash-alert", `Không tải được dữ liệu phiếu (${getFriendlyErrorMessage(e)}). Thử lại hoặc kiểm tra mạng.`, "error");
+      showAlert("dash-alert", `Không tải được dữ liệu phiếu (${e.message}). Thử lại hoặc kiểm tra mạng.`, "error");
     }
     return;
   }
@@ -1832,7 +1553,12 @@ async function deleteRecord(ma) {
   }
   try {
     showAlert("dash-alert", `Đang xóa phiếu ${ma} trên server...`, "info");
-    const data = await apiGet("delete", { ma_phieu: ma });
+    const url = new URL(API_URL);
+    url.searchParams.set("action", "delete");
+    url.searchParams.set("ma_phieu", ma);
+    url.searchParams.set("actor", getCurrentUserName());
+    const res = await fetch(url.toString());
+    const data = JSON.parse(await res.text());
     if (data?.success) {
       removeLocalDraft(ma);
       danhSachCache = danhSachCache.filter(r => r.ma_phieu !== ma);
@@ -1842,8 +1568,7 @@ async function deleteRecord(ma) {
       showAlert("dash-alert", data?.error || `Không thể xóa phiếu ${ma}.`, "error");
     }
   } catch (e) {
-    if (handleAuthError(e, "dash-alert")) return;
-    showAlert("dash-alert", `Không kết nối được server (${getFriendlyErrorMessage(e)}). Phiếu chưa bị xóa.`, "error");
+    showAlert("dash-alert", `Không kết nối được server (${e.message}). Phiếu chưa bị xóa.`, "error");
   }
 }
 
@@ -1861,8 +1586,7 @@ async function viewRecordByMa(ma) {
       showScreen("new", { record: merged, step: 1, source: "remote", viewMode: true });
     } catch (e) {
       hideAlert("dash-alert");
-      if (handleAuthError(e, "dash-alert")) return;
-      showAlert("dash-alert", `Không tải được dữ liệu phiếu (${getFriendlyErrorMessage(e)}).`, "error");
+      showAlert("dash-alert", `Không tải được dữ liệu phiếu (${e.message}).`, "error");
     }
     return;
   }
@@ -1962,9 +1686,8 @@ const FIELD_ID_MAP = {
   psqi1: "f_psqi1", psqi2: "f_psqi2", psqi3: "f_psqi3", psqi4: "f_psqi4",
   psqi5a: "f_psqi5a", psqi6: "f_psqi6", psqi7: "f_psqi7", psqi8: "f_psqi8", psqi9: "f_psqi9",
   psqi5j_text: "f_psqi5j_text",
-  nguyen_nhan_lo_au_khac: "f_nnLoAuKhac", nguyen_nhan_rlgn_khac: "f_nnRlgnKhac",
   ngay_pt_thuc: "f_ngayPTthuc", tg_pt: "f_tgPT", pp_pt_thuc: "f_ppPTthuc",
-  vo_cam_thuc: "f_voCamThuc", truyen_mau: "f_truyenMau",
+  vo_cam_thuc: "f_voCamThuc", mat_mau: "f_matMau", truyen_mau: "f_truyenMau",
   vas1: "f_vas1", vas2: "f_vas2", vas3: "f_vas3",
   van_dong: "f_vanDong", kha_nang_vd: "f_khanangVD", bien_chung: "f_bienChung",
   tg_nam_vien: "f_tgNamVien", nhan_xet: "f_nhanXet",
@@ -2118,9 +1841,6 @@ function applyFormData(data = {}) {
       if (cb) cb.checked = true;
     });
   } catch {}
-  const loAuKhacEl = document.getElementById("f_nnLoAuKhac");
-  if (loAuKhacEl) loAuKhacEl.value = String(data.nguyen_nhan_lo_au_khac || "");
-  syncReasonGroupState("nn_lo_au", "Không lo lắng", "f_nnLoAuKhac");
   // Khôi phục checkboxes nguyên nhân RLGN
   try {
     const rlgnArr = typeof data.nguyen_nhan_rlgn === "string" && data.nguyen_nhan_rlgn
@@ -2130,9 +1850,6 @@ function applyFormData(data = {}) {
       if (cb) cb.checked = true;
     });
   } catch {}
-  const rlgnKhacEl = document.getElementById("f_nnRlgnKhac");
-  if (rlgnKhacEl) rlgnKhacEl.value = String(data.nguyen_nhan_rlgn_khac || "");
-  syncReasonGroupState("nn_rlgn", "", "f_nnRlgnKhac");
   // Thuốc động: ưu tiên thuoc_ngay_*, fallback về field cũ nếu có
   [1, 2, 3].forEach(d => {
     if (data[`thuoc_ngay_${d}`]) {
@@ -2155,47 +1872,6 @@ function applyFormData(data = {}) {
   if (typeof calcPSQI === "function") calcPSQI();
   if (typeof calcAIS5 === "function") calcAIS5();
   restoreSelectionHighlights();
-}
-
-function syncReasonGroupState(groupName, exclusiveValue = "", otherInputId = "") {
-  const boxes = [...document.querySelectorAll(`input[name="${groupName}"]`)];
-  if (!boxes.length) return;
-  const exclusive = exclusiveValue ? boxes.find(cb => cb.value === exclusiveValue) : null;
-  const otherInput = otherInputId ? document.getElementById(otherInputId) : null;
-
-  if (exclusive && exclusive.checked) {
-    boxes.forEach(cb => { if (cb !== exclusive) cb.checked = false; });
-    if (otherInput) {
-      otherInput.value = "";
-      otherInput.disabled = true;
-      otherInput.placeholder = "Đã chọn 'Không lo lắng'";
-    }
-    return;
-  }
-
-  if (otherInput) {
-    otherInput.disabled = false;
-    otherInput.placeholder = groupName === "nn_lo_au"
-      ? "Nhập nguyên nhân lo âu khác..."
-      : "Nhập nguyên nhân khác...";
-  }
-}
-
-function onReasonCheckboxChange(groupName, exclusiveValue = "", changedEl = null, otherInputId = "") {
-  if (exclusiveValue) {
-    const exclusive = document.querySelector(`input[name="${groupName}"][value="${exclusiveValue}"]`);
-    if (exclusive && changedEl && changedEl !== exclusive && changedEl.checked) exclusive.checked = false;
-  }
-  syncReasonGroupState(groupName, exclusiveValue, otherInputId);
-}
-
-function collectReasonSelections(groupName, exclusiveValue = "", otherInputId = "") {
-  const selected = [...document.querySelectorAll(`input[name="${groupName}"]:checked`)].map(el => el.value);
-  const otherText = otherInputId ? String(document.getElementById(otherInputId)?.value || "").trim() : "";
-  if (exclusiveValue && selected.includes(exclusiveValue)) {
-    return { selected: [exclusiveValue], otherText: "" };
-  }
-  return { selected, otherText };
 }
 
 function updateRangeIndicators() {
@@ -2272,12 +1948,12 @@ function collectStep(n) {
     d.psqi5j_text = getText("f_psqi5j_text");
     // AIS-5
     for (let i = 1; i <= 5; i++) d[`ais_${i}`] = radio(`ais_${i}`);
-    const loAuReasons = collectReasonSelections("nn_lo_au", "Không lo lắng", "f_nnLoAuKhac");
-    d.nguyen_nhan_lo_au = loAuReasons.selected.length ? JSON.stringify(loAuReasons.selected) : "";
-    d.nguyen_nhan_lo_au_khac = loAuReasons.otherText;
-    const rlgnReasons = collectReasonSelections("nn_rlgn", "", "f_nnRlgnKhac");
-    d.nguyen_nhan_rlgn = rlgnReasons.selected.length ? JSON.stringify(rlgnReasons.selected) : "";
-    d.nguyen_nhan_rlgn_khac = rlgnReasons.otherText;
+    // Nguyên nhân lo âu (multi-select checkbox → JSON array)
+    const nnLoAuChecked = [...document.querySelectorAll("input[name='nn_lo_au']:checked")].map(el => el.value);
+    d.nguyen_nhan_lo_au = nnLoAuChecked.length ? JSON.stringify(nnLoAuChecked) : "";
+    // Nguyên nhân RLGN (multi-select checkbox → JSON array)
+    const nnRlgnChecked = [...document.querySelectorAll("input[name='nn_rlgn']:checked")].map(el => el.value);
+    d.nguyen_nhan_rlgn = nnRlgnChecked.length ? JSON.stringify(nnRlgnChecked) : "";
     return d;
   }
 
@@ -2286,6 +1962,7 @@ function collectStep(n) {
     tg_pt:         getNum("f_tgPT"),
     pp_pt_thuc:    getText("f_ppPTthuc"),
     vo_cam_thuc:   getText("f_voCamThuc"),
+    mat_mau:       getNum("f_matMau"),
     truyen_mau:    getText("f_truyenMau"),
     // VAS sau mổ: range, giá trị 0 là hợp lệ
     vas1:          getNum("f_vas1"),
@@ -2452,108 +2129,42 @@ function applyThuocNgay(ngay, rawValue) {
 
 
 // ── Google Form Integration (Bước 2) ────────────────────────
-let formConfig = {
-  baseUrl: String(window.APP_FORM?.baseUrl || "").trim().split("?")[0],
-  maPhieuEntryId: String(window.APP_FORM?.maPhieuEntryId || "").trim(),
-};
-
-function hasFormConfig() {
-  return Boolean(formConfig.baseUrl && formConfig.maPhieuEntryId);
-}
-
-async function loadFormConfig(force = false) {
-  if (hasFormConfig() && !force) return formConfig;
-  if (!API_URL) return formConfig;
-  try {
-    const res = await apiGet("form-config");
-    const cfg = res?.data || {};
-    if (cfg.baseUrl) formConfig.baseUrl = String(cfg.baseUrl).trim().split("?")[0];
-    if (cfg.maPhieuEntryId) formConfig.maPhieuEntryId = String(cfg.maPhieuEntryId).trim();
-  } catch (err) {
-    console.warn("[FormConfig] Không tải được cấu hình form từ server:", err?.message || err);
-  }
-  return formConfig;
-}
+const FORM_BASE_URL       = window.APP_FORM?.baseUrl        || "";
+const FORM_MA_PHIEU_ENTRY = window.APP_FORM?.maPhieuEntryId || "";
 
 function getFormLink(maPhieu) {
-  const ma = String(maPhieu || "").trim();
-  if (!ma || !hasFormConfig()) return "";
-  return `${formConfig.baseUrl}?usp=pp_url&${formConfig.maPhieuEntryId}=${encodeURIComponent(ma)}`;
+  if (!FORM_BASE_URL || !FORM_MA_PHIEU_ENTRY) return "";
+  return `${FORM_BASE_URL}?usp=pp_url&${FORM_MA_PHIEU_ENTRY}=${encodeURIComponent(maPhieu)}`;
 }
 
-async function showFormLinkModal(maPhieu) {
-  await loadFormConfig();
-  const link  = getFormLink(maPhieu);
-  const hoTen = normalizePatientName(document.getElementById("f_ten")?.value || "");
-  if (!hasFormConfig()) {
-    showAlert("form-alert", "Chưa cấu hình Google Form bước 2. Hãy chạy TAO_FORM_TU_DONG.gs hoặc kiểm tra Script Properties STEP2_FORM_URL / STEP2_ENTRY_ID.", "error");
+function showFormLinkModal(maPhieu) {
+  const link = getFormLink(maPhieu);
+  if (!FORM_BASE_URL) {
+    showAlert("form-alert", "Chưa cấu hình APP_FORM trong auth-config.js.", "error");
     return;
   }
   document.getElementById("form-link-modal")?.remove();
   const modal = document.createElement("div");
   modal.id = "form-link-modal";
-  modal.style.cssText = "position:fixed;inset:0;background:rgba(2,6,23,.68);backdrop-filter:blur(3px);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;";
+  modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;";
   modal.innerHTML = `
-    <div style="background:linear-gradient(180deg,#f8fffe 0%,#ffffff 100%);border-radius:22px;padding:22px;max-width:860px;width:100%;box-shadow:0 18px 60px rgba(15,23,42,.32);border:1px solid rgba(13,148,136,.16);">
-      <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;margin-bottom:18px;">
-        <div>
-          <div style="display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;background:#ccfbf1;color:#115e59;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;">QR dành cho bệnh nhân</div>
-          <div style="font-size:24px;font-weight:800;color:#0f172a;margin-top:10px;letter-spacing:-.4px;">Quét mã để mở phiếu khảo sát</div>
-          <div style="font-size:13px;color:#475569;margin-top:6px;line-height:1.6;max-width:520px;">Thiết kế này ưu tiên cả hai tình huống: có điện thoại thì quét QR, không dùng điện thoại thì in ngay phiếu giấy cho người bệnh điền tại giường.</div>
-        </div>
-        <button class="btn btn-sm" style="min-width:92px;" onclick="document.getElementById('form-link-modal').remove()">Đóng</button>
+    <div style="background:var(--surface);border-radius:16px;padding:24px 22px;max-width:420px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.25);">
+      <div style="font-size:16px;font-weight:700;color:var(--primary);margin-bottom:4px;">📋 Link khảo sát cho bệnh nhân</div>
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px;">
+        Mã phiếu đã điền sẵn: <strong style="color:var(--primary);font-family:'DM Mono',monospace;">${escapeHtml(maPhieu)}</strong>
       </div>
-
-      <div style="display:grid;grid-template-columns:minmax(280px,340px) minmax(280px,1fr);gap:18px;align-items:stretch;">
-        <div style="background:linear-gradient(180deg,#0f766e 0%,#0d9488 100%);border-radius:24px;padding:18px;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:420px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.08);">
-          <div style="font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;opacity:.82;text-align:center;">BỆNH NHÂN QUÉT MÃ NÀY</div>
-          <div style="font-size:20px;font-weight:800;text-align:center;line-height:1.25;margin:10px 0 6px;">${escapeHtml(hoTen) || "Phiếu khảo sát trước mổ"}</div>
-          <div style="font-size:12px;opacity:.82;font-family:'DM Mono',monospace;">Mã phiếu: ${escapeHtml(maPhieu)}</div>
-          <div id="form-qr-wrap" style="display:flex;justify-content:center;align-items:center;margin:18px 0 12px;padding:18px;background:#fff;border-radius:22px;border:6px solid rgba(255,255,255,.18);min-height:284px;min-width:284px;cursor:pointer;box-shadow:0 12px 26px rgba(0,0,0,.18);"
-            onclick="showQRFullscreen('${escapeHtml(link)}','${escapeHtml(hoTen)}','${escapeHtml(maPhieu)}')" title="Nhấn để phóng to toàn màn hình">
-            <div id="form-qr-container"></div>
-            <div id="form-qr-loading" style="font-size:12px;color:#64748b;">Đang tạo QR...</div>
-          </div>
-          <div style="font-size:12px;line-height:1.6;text-align:center;opacity:.88;max-width:250px;">Mở camera điện thoại hoặc Zalo → đưa vào mã QR → nhấn vào đường link hiện ra.</div>
-        </div>
-
-        <div style="display:flex;flex-direction:column;gap:14px;min-height:420px;">
-          <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:18px;padding:16px;">
-            <div style="font-size:14px;font-weight:800;color:#0f172a;margin-bottom:10px;">Cách dùng tại giường bệnh</div>
-            <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;">
-              <div style="background:#fff;border:1px solid #dbeafe;border-radius:14px;padding:12px;">
-                <div style="font-size:20px;margin-bottom:6px;">1️⃣</div>
-                <div style="font-size:12px;font-weight:700;color:#0f172a;">Đưa điện thoại</div>
-                <div style="font-size:11px;color:#64748b;line-height:1.5;">Bệnh nhân hoặc người nhà mở camera.</div>
-              </div>
-              <div style="background:#fff;border:1px solid #ccfbf1;border-radius:14px;padding:12px;">
-                <div style="font-size:20px;margin-bottom:6px;">2️⃣</div>
-                <div style="font-size:12px;font-weight:700;color:#0f172a;">Quét mã</div>
-                <div style="font-size:11px;color:#64748b;line-height:1.5;">Giữ cách QR khoảng 15–25 cm để nhận link nhanh.</div>
-              </div>
-              <div style="background:#fff;border:1px solid #ede9fe;border-radius:14px;padding:12px;">
-                <div style="font-size:20px;margin-bottom:6px;">3️⃣</div>
-                <div style="font-size:12px;font-weight:700;color:#0f172a;">Điền khảo sát</div>
-                <div style="font-size:11px;color:#64748b;line-height:1.5;">Mã phiếu đã gắn sẵn, chỉ cần trả lời câu hỏi.</div>
-              </div>
-            </div>
-          </div>
-
-          <div style="background:#fff;border:1px solid #dbe4f0;border-radius:18px;padding:16px;">
-            <div style="font-size:12px;font-weight:800;color:#0f172a;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">Link dự phòng</div>
-            <div style="background:#f8fafc;border-radius:12px;padding:12px;font-size:11px;font-family:'DM Mono',monospace;word-break:break-all;color:#475569;border:1px dashed #cbd5e1;max-height:82px;overflow-y:auto;">${escapeHtml(link)}</div>
-            <div style="font-size:11px;color:#64748b;line-height:1.6;margin-top:8px;">Dùng khi điện thoại không quét được QR hoặc muốn gửi bệnh nhân qua Zalo/SMS.</div>
-          </div>
-
-          <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;">
-            <button class="btn btn-primary btn-sm" style="width:100%;padding:12px 10px;" onclick="showQRFullscreen('${escapeHtml(link)}','${escapeHtml(hoTen)}','${escapeHtml(maPhieu)}')">🖥️ Mở QR lớn</button>
-            <button class="btn btn-sm" style="width:100%;padding:12px 10px;background:#0f766e;color:#fff;border-color:#0f766e;" onclick="printQRCodeCard('${escapeHtml(link)}','${escapeHtml(hoTen)}','${escapeHtml(maPhieu)}')">🖨️ In thẻ QR</button>
-            <button class="btn btn-sm" style="width:100%;padding:12px 10px;background:#1d4ed8;color:#fff;border-color:#1d4ed8;" onclick="printPatientPaperForm('${escapeHtml(link)}','${escapeHtml(hoTen)}','${escapeHtml(maPhieu)}')">📝 In phiếu giấy</button>
-            <button class="btn btn-sm" style="width:100%;padding:12px 10px;" onclick="copyFormLink('${escapeHtml(link)}',this)">📋 Sao chép link</button>
-            <button class="btn btn-sm" style="width:100%;padding:12px 10px;background:var(--green-600);color:#fff;border-color:var(--green-600);" onclick="shareFormViaZalo('${escapeHtml(link)}','${escapeHtml(hoTen)}',this)">💬 Gửi Zalo / SMS</button>
-            <button class="btn btn-sm" style="width:100%;padding:12px 10px;background:#fff7ed;color:#9a3412;border-color:#fed7aa;" onclick="showPrintablePaperGuide()">ℹ️ Hướng dẫn phiếu giấy</button>
-          </div>
-        </div>
+      <div id="form-qr-wrap" style="display:flex;justify-content:center;align-items:center;margin-bottom:16px;padding:16px;background:#fff;border-radius:10px;border:1px solid var(--border);min-height:220px;">
+        <div id="form-qr-container"></div>
+        <div id="form-qr-loading" style="font-size:12px;color:var(--text-muted);">Đang tạo QR...</div>
+      </div>
+      <div style="background:var(--slate-50);border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:11px;font-family:'DM Mono',monospace;word-break:break-all;color:var(--slate-700);border:1px solid var(--border);max-height:72px;overflow-y:auto;" id="form-link-display">${escapeHtml(link)}</div>
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:14px;background:var(--teal-50);border-radius:8px;padding:10px 12px;border-left:3px solid var(--teal-400);line-height:1.6;">
+        📱 <strong>Quét QR</strong> bằng camera hoặc <strong>sao chép link</strong> gửi qua Zalo/nhắn tin. Mã phiếu đã điền sẵn.
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-primary btn-sm" style="flex:1;min-width:110px;" onclick="copyFormLink('${escapeHtml(link)}',this)">📋 Sao chép link</button>
+        <button class="btn btn-sm" style="flex:1;" onclick="window.open('${escapeHtml(link)}','_blank')">🔗 Mở thử</button>
+        <button class="btn btn-sm" onclick="document.getElementById('form-link-modal').remove()">Đóng</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
@@ -2563,337 +2174,11 @@ async function showFormLinkModal(maPhieu) {
     const loading = document.getElementById("form-qr-loading");
     if (loading) loading.style.display = "none";
     if (qrEl && typeof QRCode !== "undefined") {
-      new QRCode(qrEl, { text: link, width: 240, height: 240, colorDark: "#0f172a", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.H });
+      new QRCode(qrEl, { text: link, width: 192, height: 192, colorDark: "#0D9488", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.M });
     }
   });
 }
 
-// ── QR toàn màn hình ────────────────────────────────────────
-function showQRFullscreen(link, hoTen, maPhieu) {
-  document.getElementById("form-qr-fullscreen")?.remove();
-  const overlay = document.createElement("div");
-  overlay.id = "form-qr-fullscreen";
-  overlay.style.cssText = `
-    position:fixed;inset:0;z-index:99999;cursor:pointer;
-    background:radial-gradient(circle at top,#14b8a6 0%,#0f766e 38%,#0f172a 100%);
-    display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;
-  `;
-  overlay.innerHTML = `
-    <div style="width:min(960px,100%);display:grid;grid-template-columns:minmax(320px,420px) minmax(260px,1fr);gap:24px;align-items:center;">
-      <div style="background:#fff;border-radius:30px;padding:28px;box-shadow:0 24px 70px rgba(0,0,0,.35);display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:520px;">
-        <div style="font-size:13px;font-weight:800;color:#0f766e;letter-spacing:.12em;text-transform:uppercase;text-align:center;">BỆNH NHÂN QUÉT MÃ NÀY</div>
-        <div id="qr-fs-box" style="margin:20px 0 16px;"></div>
-        <div style="font-size:14px;font-weight:700;color:#0f172a;text-align:center;">${escapeHtml(hoTen) || "Phiếu khảo sát"}</div>
-        <div style="font-size:12px;color:#64748b;font-family:'DM Mono',monospace;margin-top:6px;">Mã phiếu: ${escapeHtml(maPhieu || "")}</div>
-      </div>
-      <div style="color:#fff;">
-        <div style="display:inline-flex;align-items:center;gap:8px;padding:7px 13px;border-radius:999px;background:rgba(255,255,255,.12);font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;margin-bottom:14px;">Khảo sát trước phẫu thuật</div>
-        <div style="font-size:44px;font-weight:900;line-height:1.05;letter-spacing:-1px;max-width:440px;">Quét mã để mở phiếu</div>
-        <div style="font-size:16px;line-height:1.7;opacity:.92;margin-top:16px;max-width:430px;">Chỉ cần mở camera điện thoại, hướng vào mã QR và nhấn vào đường link hiện ra. Giao diện này được tối ưu để bệnh nhân hoặc người nhà quét ngay tại giường bệnh.</div>
-        <div style="display:grid;gap:12px;margin-top:24px;max-width:420px;">
-          <div style="background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.14);border-radius:18px;padding:14px 16px;">
-            <div style="font-size:13px;font-weight:800;margin-bottom:4px;">1. Mở camera / Zalo</div>
-            <div style="font-size:13px;opacity:.85;">Dùng điện thoại của bệnh nhân hoặc người nhà.</div>
-          </div>
-          <div style="background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.14);border-radius:18px;padding:14px 16px;">
-            <div style="font-size:13px;font-weight:800;margin-bottom:4px;">2. Giữ mã trong khung hình</div>
-            <div style="font-size:13px;opacity:.85;">Khoảng cách đẹp nhất là 15–25 cm, tránh rung tay.</div>
-          </div>
-          <div style="background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.14);border-radius:18px;padding:14px 16px;">
-            <div style="font-size:13px;font-weight:800;margin-bottom:4px;">3. Nhấn vào link hiện ra</div>
-            <div style="font-size:13px;opacity:.85;">Mã phiếu đã điền sẵn, bệnh nhân chỉ cần trả lời câu hỏi.</div>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div style="position:absolute;top:18px;right:22px;color:#fff;font-size:12px;opacity:.72;">Chạm bất kỳ đâu để đóng</div>
-  `;
-  document.body.appendChild(overlay);
-  document.body.style.overflow = "hidden";
-  overlay.addEventListener("click", () => {
-    overlay.remove();
-    document.body.style.overflow = "";
-  });
-  _loadQRCode(() => {
-    const box = document.getElementById("qr-fs-box");
-    if (!box || typeof QRCode === "undefined") return;
-    const size = Math.min(window.innerWidth * 0.34, 360);
-    new QRCode(box, { text: link, width: size, height: size, colorDark: "#0f172a", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.H });
-  });
-}
-
-function printQRCodeCard(link, hoTen, maPhieu) {
-  const win = window.open("", "_blank", "width=820,height=980");
-  if (!win) {
-    alert("Trình duyệt đang chặn cửa sổ in. Hãy cho phép popup rồi thử lại.");
-    return;
-  }
-  const safeName = escapeHtml(hoTen || "Phiếu khảo sát");
-  const safeCode = escapeHtml(maPhieu || "");
-  const safeLink = escapeHtml(link || "");
-  win.document.write(`<!doctype html>
-<html lang="vi">
-<head>
-  <meta charset="UTF-8">
-  <title>Thẻ QR khảo sát</title>
-  <style>
-    @page { size: A4 portrait; margin: 12mm; }
-    body { font-family: Arial, sans-serif; margin: 0; background: #e6fffb; }
-    .sheet { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 12mm; box-sizing: border-box; }
-    .card { width: 100%; max-width: 176mm; min-height: 250mm; background: linear-gradient(180deg,#0f766e 0%,#0f172a 100%); color: #fff; border-radius: 10mm; padding: 14mm; box-sizing: border-box; position: relative; overflow: hidden; }
-    .badge { display: inline-block; padding: 3mm 6mm; border-radius: 999px; background: rgba(255,255,255,.14); font-size: 10pt; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-    h1 { font-size: 28pt; line-height: 1.08; margin: 8mm 0 4mm; }
-    .sub { font-size: 12pt; line-height: 1.7; opacity: .92; max-width: 120mm; }
-    .grid { display: grid; grid-template-columns: 88mm 1fr; gap: 10mm; align-items: center; margin-top: 10mm; }
-    .qrbox { background: #fff; border-radius: 8mm; padding: 8mm; box-shadow: 0 8mm 20mm rgba(0,0,0,.25); text-align: center; }
-    .meta { margin-top: 5mm; color: #d1fae5; font-size: 11pt; }
-    .steps { display: grid; gap: 4mm; }
-    .step { background: rgba(255,255,255,.10); border: .4mm solid rgba(255,255,255,.16); border-radius: 5mm; padding: 4mm 5mm; }
-    .step b { display: block; font-size: 12pt; margin-bottom: 1.5mm; }
-    .foot { position: absolute; left: 14mm; right: 14mm; bottom: 12mm; background: rgba(255,255,255,.08); border-radius: 5mm; padding: 4mm 5mm; font-size: 9pt; line-height: 1.6; }
-    .code { font-family: 'Courier New', monospace; font-size: 10pt; }
-  </style>
-</head>
-<body>
-  <div class="sheet">
-    <div class="card">
-      <div class="badge">Bệnh nhân quét mã này</div>
-      <h1>Quét QR để mở phiếu khảo sát</h1>
-      <div class="sub">Mở camera hoặc Zalo trên điện thoại, hướng vào mã QR và nhấn vào đường link hiện ra để bắt đầu điền khảo sát.</div>
-      <div class="grid">
-        <div class="qrbox">
-          <div id="qr-print" style="display:flex;justify-content:center;"></div>
-          <div style="margin-top:4mm;font-weight:700;color:#0f172a;">${safeName}</div>
-          <div class="meta" style="color:#475569;">Mã phiếu: <span class="code">${safeCode}</span></div>
-        </div>
-        <div class="steps">
-          <div class="step"><b>1. Mở camera / Zalo</b><span>Dùng điện thoại của bệnh nhân hoặc người nhà.</span></div>
-          <div class="step"><b>2. Quét mã QR</b><span>Giữ điện thoại cách mã khoảng 15–25 cm để nhận diện nhanh.</span></div>
-          <div class="step"><b>3. Nhấn vào link hiện ra</b><span>Mã phiếu đã được gắn sẵn, chỉ cần trả lời câu hỏi.</span></div>
-        </div>
-      </div>
-      <div class="foot">Link dự phòng: <span class="code">${safeLink}</span></div>
-    </div>
-  </div>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-  <script>
-    window.onload = function () {
-      var size = 300;
-      new QRCode(document.getElementById('qr-print'), {
-        text: LINK_PLACEHOLDER,
-        width: size,
-        height: size,
-        colorDark: '#0f172a',
-        colorLight: '#ffffff',
-        correctLevel: QRCode.CorrectLevel.H
-      });
-      setTimeout(function () { window.print(); }, 500);
-    };
-  </script>
-</body>
-</html>`.replace('LINK_PLACEHOLDER', JSON.stringify(link || '')));
-  win.document.close();
-}
-
-function showPrintablePaperGuide() {
-  alert(`Phiếu giấy dùng cho bệnh nhân không sử dụng điện thoại.
-
-Cách dùng:
-1) Bấm “In phiếu giấy”.
-2) Cho bệnh nhân hoặc người nhà điền trực tiếp trên giấy.
-3) Điều tra viên mở lại phiếu điện tử và nhập kết quả từ giấy vào hệ thống.`);
-}
-
-function printPatientPaperForm(link, hoTen, maPhieu) {
-  const win = window.open("", "_blank", "width=980,height=1200");
-  if (!win) {
-    alert("Trình duyệt đang chặn cửa sổ in. Hãy cho phép popup rồi thử lại.");
-    return;
-  }
-
-  const safeName = escapeHtml(hoTen || "____________________________");
-  const safeCode = escapeHtml(maPhieu || "");
-  const loAuItems = (window.NGUYEN_NHAN_LO_AU || []).map(item => `<span class="tick">☐ ${escapeHtml(item)}</span>`).join("");
-  const rlgnItems = (window.NGUYEN_NHAN_RLGN || []).map(item => `<span class="tick">☐ ${escapeHtml(item)}</span>`).join("");
-  const hadsRows = (window.HADS_DATA || []).map((item, idx) => `
-    <tr>
-      <td class="stt">${idx + 1}</td>
-      <td>${escapeHtml(item.q || "")}</td>
-      <td class="opt">☐ 0</td>
-      <td class="opt">☐ 1</td>
-      <td class="opt">☐ 2</td>
-      <td class="opt">☐ 3</td>
-    </tr>`).join("");
-  const aisRows = (window.AIS5_DATA || []).map((item, idx) => `
-    <tr>
-      <td class="stt">${idx + 1}</td>
-      <td>${escapeHtml(item.label || "")}</td>
-      <td class="opt">☐ 0</td>
-      <td class="opt">☐ 1</td>
-      <td class="opt">☐ 2</td>
-      <td class="opt">☐ 3</td>
-    </tr>`).join("");
-
-  win.document.write(`<!doctype html>
-<html lang="vi">
-<head>
-  <meta charset="UTF-8">
-  <title>Phiếu giấy khảo sát người bệnh</title>
-  <style>
-    @page { size: A4 portrait; margin: 10mm; }
-    body { font-family: Arial, sans-serif; color:#111827; margin:0; }
-    .page { page-break-after: always; padding: 0; }
-    .page:last-child { page-break-after: auto; }
-    .frame { border: 1px solid #cbd5e1; border-radius: 4mm; padding: 6mm; box-sizing: border-box; }
-    h1 { font-size: 18pt; margin: 0 0 2mm; text-align:center; }
-    h2 { font-size: 12pt; margin: 5mm 0 2mm; color:#0f766e; }
-    .sub { text-align:center; font-size: 10pt; color:#475569; margin-bottom: 4mm; }
-    .meta { display:grid; grid-template-columns: 1fr 1fr; gap: 3mm 6mm; font-size:10.5pt; }
-    .line { border-bottom: 1px dotted #64748b; min-height: 6mm; display:inline-block; width:100%; }
-    table { width:100%; border-collapse: collapse; font-size:9.4pt; }
-    th, td { border:1px solid #cbd5e1; padding: 2.2mm; vertical-align: top; }
-    th { background:#f8fafc; }
-    .stt { width: 8mm; text-align:center; }
-    .opt { width: 11mm; text-align:center; white-space: nowrap; }
-    .ticks { display:flex; flex-wrap:wrap; gap: 2mm 4mm; font-size:10pt; }
-    .tick { min-width: 46%; }
-    .box { border:1px solid #cbd5e1; border-radius:3mm; padding:3mm 4mm; margin-top:2mm; min-height: 14mm; }
-    .note { font-size:9pt; color:#475569; line-height:1.5; }
-  </style>
-</head>
-<body>
-  <div class="page">
-    <div class="frame">
-      <h1>PHIẾU KHẢO SÁT NGƯỜI BỆNH</h1>
-      <div class="sub">Dành cho người bệnh không sử dụng điện thoại / mã QR. Sau khi điền giấy, điều tra viên nhập lại vào phiếu điện tử.</div>
-      <div class="meta">
-        <div><b>Họ tên người bệnh:</b> <span class="line">${safeName}</span></div>
-        <div><b>Mã phiếu:</b> <span class="line">${safeCode}</span></div>
-        <div><b>Mã BN / Số hồ sơ:</b> <span class="line"></span></div>
-        <div><b>Ngày điền:</b> <span class="line"></span></div>
-      </div>
-
-      <h2>B1. Thang HADS — 14 câu</h2>
-      <table>
-        <thead><tr><th class="stt">STT</th><th>Nội dung</th><th class="opt">0</th><th class="opt">1</th><th class="opt">2</th><th class="opt">3</th></tr></thead>
-        <tbody>${hadsRows}</tbody>
-      </table>
-    </div>
-  </div>
-
-  <div class="page">
-    <div class="frame">
-      <h2>B2. Chỉ số PSQI — Chất lượng giấc ngủ</h2>
-      <div class="meta">
-        <div><b>PSQI-1. Giờ đi ngủ:</b> <span class="line"></span></div>
-        <div><b>PSQI-3. Giờ thức dậy:</b> <span class="line"></span></div>
-        <div><b>PSQI-2. Mất bao lâu để ngủ được (phút):</b> <span class="line"></span></div>
-        <div><b>PSQI-4. Ngủ thực sự bao nhiêu giờ/đêm:</b> <span class="line"></span></div>
-      </div>
-
-      <h2>PSQI-5a đến 5j — Trong tháng qua, vấn đề này xảy ra bao nhiêu lần?</h2>
-      <table>
-        <thead><tr><th>Nội dung</th><th class="opt">0</th><th class="opt">1</th><th class="opt">2</th><th class="opt">3</th></tr></thead>
-        <tbody>
-          <tr><td>PSQI-5a. Mất hơn 30 phút để ngủ</td><td class="opt">☐</td><td class="opt">☐</td><td class="opt">☐</td><td class="opt">☐</td></tr>
-          <tr><td>PSQI-5b. Thức dậy giữa đêm hoặc quá sớm</td><td class="opt">☐</td><td class="opt">☐</td><td class="opt">☐</td><td class="opt">☐</td></tr>
-          <tr><td>PSQI-5c. Phải thức dậy để đi vệ sinh</td><td class="opt">☐</td><td class="opt">☐</td><td class="opt">☐</td><td class="opt">☐</td></tr>
-          <tr><td>PSQI-5d. Không thể thở thoải mái</td><td class="opt">☐</td><td class="opt">☐</td><td class="opt">☐</td><td class="opt">☐</td></tr>
-          <tr><td>PSQI-5e. Ho hoặc ngáy to</td><td class="opt">☐</td><td class="opt">☐</td><td class="opt">☐</td><td class="opt">☐</td></tr>
-          <tr><td>PSQI-5f. Cảm thấy quá lạnh</td><td class="opt">☐</td><td class="opt">☐</td><td class="opt">☐</td><td class="opt">☐</td></tr>
-          <tr><td>PSQI-5g. Cảm thấy quá nóng</td><td class="opt">☐</td><td class="opt">☐</td><td class="opt">☐</td><td class="opt">☐</td></tr>
-          <tr><td>PSQI-5h. Có ác mộng</td><td class="opt">☐</td><td class="opt">☐</td><td class="opt">☐</td><td class="opt">☐</td></tr>
-          <tr><td>PSQI-5i. Đau làm ảnh hưởng giấc ngủ</td><td class="opt">☐</td><td class="opt">☐</td><td class="opt">☐</td><td class="opt">☐</td></tr>
-          <tr><td>PSQI-5j. Lý do khác</td><td class="opt">☐</td><td class="opt">☐</td><td class="opt">☐</td><td class="opt">☐</td></tr>
-        </tbody>
-      </table>
-      <div class="box"><b>Mô tả lý do khác (PSQI-5j):</b></div>
-
-      <div class="meta" style="margin-top:4mm;">
-        <div><b>PSQI-6. Chất lượng giấc ngủ tổng thể:</b> ☐ Rất tốt ☐ Tương đối tốt ☐ Tương đối kém ☐ Rất kém</div>
-        <div><b>PSQI-7. Dùng thuốc ngủ/tuần:</b> ☐ Không ☐ <1/tuần ☐ 1–2/tuần ☐ ≥3/tuần</div>
-        <div><b>PSQI-8. Khó giữ tỉnh táo ban ngày:</b> ☐ Không ☐ <1/tuần ☐ 1–2/tuần ☐ ≥3/tuần</div>
-        <div><b>PSQI-9. Ảnh hưởng sinh hoạt hàng ngày:</b> ☐ Không ☐ Nhẹ ☐ Vừa ☐ Nhiều</div>
-      </div>
-    </div>
-  </div>
-
-  <div class="page">
-    <div class="frame">
-      <h2>B3. Thang AIS-5 — Rối loạn giấc ngủ</h2>
-      <table>
-        <thead><tr><th class="stt">STT</th><th>Nội dung</th><th class="opt">0</th><th class="opt">1</th><th class="opt">2</th><th class="opt">3</th></tr></thead>
-        <tbody>${aisRows}</tbody>
-      </table>
-
-      <h2>B4. Nguyên nhân lo âu trước phẫu thuật</h2>
-      <div class="ticks">${loAuItems}</div>
-      <div class="box"><b>Nguyên nhân khác:</b></div>
-
-      <h2>B5. Nguyên nhân rối loạn giấc ngủ</h2>
-      <div class="ticks">${rlgnItems}</div>
-      <div class="box"><b>Khác:</b></div>
-
-      <div class="note" style="margin-top:4mm;">Link điện tử dự phòng: ${escapeHtml(link || "")}</div>
-    </div>
-  </div>
-
-  <script>window.onload = function(){ setTimeout(function(){ window.print(); }, 400); };</script>
-</body>
-</html>`);
-  win.document.close();
-}
-
-// ── Gửi qua Zalo / SMS ──────────────────────────────────────
-async function shareFormViaZalo(link, hoTen, btn) {
-  const ten = hoTen || "bạn";
-  const msg =
-    `Kính gửi ${ten},
-
-` +
-    `Vui lòng điền phiếu khảo sát sức khỏe trước phẫu thuật tại:
-
-` +
-    `${link}
-
-` +
-    `Mã phiếu đã điền sẵn — chỉ cần trả lời câu hỏi.
-` +
-    `Xin cảm ơn!
-— Khoa Ngoại CTCH-TK, ĐH Y Dược Cần Thơ`;
-
-  // Web Share API (hoạt động tốt trên điện thoại / tablet)
-  if (navigator.share) {
-    try {
-      await navigator.share({ title: "Phiếu khảo sát sức khỏe", text: msg, url: link });
-      return;
-    } catch (err) {
-      if (err.name === "AbortError") return;
-    }
-  }
-
-  // Fallback: copy vào clipboard
-  const doCopy = async () => {
-    try { await navigator.clipboard.writeText(msg); }
-    catch {
-      const ta = document.createElement("textarea");
-      ta.value = msg; ta.style.cssText = "position:fixed;opacity:0";
-      document.body.appendChild(ta); ta.select();
-      document.execCommand("copy"); document.body.removeChild(ta);
-    }
-  };
-  await doCopy();
-
-  if (btn) {
-    const orig = btn.textContent;
-    btn.textContent = "✓ Đã copy!";
-    btn.style.background = "var(--teal-700)";
-    setTimeout(() => { btn.textContent = orig; btn.style.background = "var(--green-600)"; }, 2500);
-  }
-  alert(`✅ Đã copy tin nhắn sẵn!
-
-Mở Zalo → tìm bệnh nhân → dán (paste) vào ô chat → Gửi.`);
-}
 function _loadQRCode(callback) {
   if (typeof QRCode !== "undefined") { callback(); return; }
   const s = document.createElement("script");
@@ -2941,8 +2226,7 @@ async function checkStep2FromForm() {
       showAlert("form-alert", "Bệnh nhân chưa điền form. Hãy chia sẻ link/QR rồi thử lại sau.", "info");
     }
   } catch (e) {
-    if (handleAuthError(e, "form-alert")) return;
-    showAlert("form-alert", "Lỗi kiểm tra: " + getFriendlyErrorMessage(e), "error");
+    showAlert("form-alert", "Lỗi kiểm tra: " + e.message, "error");
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = "🔄 Kiểm tra kết quả"; }
   }
@@ -2962,7 +2246,7 @@ function _setStep2FormBadge(status, submittedAt = "") {
 }
 
 async function autoCheckStep2Status() {
-  if (!currentMaPhieu || !hasFormConfig()) return;
+  if (!currentMaPhieu || !FORM_BASE_URL) return;
   try {
     const res = await apiGet("check-form-step2", { ma: currentMaPhieu });
     _setStep2FormBadge(res?.submitted ? "done" : "waiting", res?.submitted_at);
@@ -3092,13 +2376,13 @@ function buildStep2() {
       <span style="font-size:13px;">${lbl}</span>
     </label>`).join("");
 
-  const formBannerHtml = hasFormConfig() ? `
+  const formBannerHtml = FORM_BASE_URL ? `
   <div class="card" style="border:2px solid var(--teal-200);background:var(--teal-50);">
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
       <div>
-        <div style="font-size:13px;font-weight:700;color:var(--primary);margin-bottom:4px;">📱 Bước 2 — Người bệnh tự điền qua phiếu điện tử riêng</div>
+        <div style="font-size:13px;font-weight:700;color:var(--primary);margin-bottom:4px;">📱 Bước 2 — Bệnh nhân tự điền qua Google Form</div>
         <div style="font-size:12px;color:var(--text-muted);line-height:1.5;">
-          Tạo link/QR → bệnh nhân quét để mở đúng phiếu điện tử → nhấn <strong>Kiểm tra kết quả</strong> sau khi bệnh nhân gửi xong.
+          Tạo link/QR → chia sẻ cho bệnh nhân → nhấn <strong>Kiểm tra kết quả</strong> khi bệnh nhân điền xong.
         </div>
         <div id="step2-form-badge" style="margin-top:8px;"><span class="badge badge-gray">Chưa gửi link</span></div>
       </div>
@@ -3108,7 +2392,7 @@ function buildStep2() {
       </div>
     </div>
     <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--teal-100);font-size:11px;color:var(--text-muted);">
-      💡 Bạn vẫn có thể tự điền tay bên dưới nếu cần, hoặc in phiếu giấy cho người bệnh.
+      💡 Bạn vẫn có thể tự điền tay bên dưới nếu cần.
     </div>
   </div>` : "";
 
@@ -3188,18 +2472,10 @@ function buildStep2() {
   <div class="card">
     <div class="card-title">B4. Nguyên nhân lo âu trước phẫu thuật <span style="font-size:11px;color:var(--text-muted)">(có thể chọn nhiều)</span></div>
     <div class="q-list" style="display:flex;flex-direction:column;gap:8px;">${nnLoAuHtml}</div>
-    <div style="margin-top:10px;">
-      <label style="display:block;font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px;">Nguyên nhân khác</label>
-      <textarea id="f_nnLoAuKhac" rows="2" placeholder="Nhập nguyên nhân lo âu khác..." style="width:100%;font-size:12px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);box-sizing:border-box;resize:vertical;" oninput="syncReasonGroupState('nn_lo_au','Không lo lắng','f_nnLoAuKhac')"></textarea>
-    </div>
   </div>
   <div class="card">
     <div class="card-title">B5. Nguyên nhân rối loạn giấc ngủ <span style="font-size:11px;color:var(--text-muted)">(có thể chọn nhiều)</span></div>
     <div class="q-list" style="display:flex;flex-direction:column;gap:8px;">${nnRlgnHtml}</div>
-    <div style="margin-top:10px;">
-      <label style="display:block;font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px;">Khác</label>
-      <textarea id="f_nnRlgnKhac" rows="2" placeholder="Nhập nguyên nhân khác..." style="width:100%;font-size:12px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);box-sizing:border-box;resize:vertical;"></textarea>
-    </div>
   </div>`;
 
   setTimeout(() => autoCheckStep2Status(), 300);
@@ -3232,6 +2508,7 @@ function buildStep3() {
       <div class="form-group"><label>Phương pháp vô cảm thực tế</label><input id="f_voCamThuc"></div>
     </div>
     <div class="form-row">
+      <div class="form-group"><label>Mất máu ước tính (mL)</label><input type="number" id="f_matMau" placeholder="200"></div>
       <div class="form-group">
         <label>Truyền máu</label>
         <select id="f_truyenMau">
@@ -3422,7 +2699,6 @@ document.addEventListener("DOMContentLoaded", () => {
   ensureFooterControls();
   ensureModeBanner();
   bindAutosave();
-  loadFormConfig();
   document.getElementById("btn-dash")?.addEventListener("click", () => { showScreen("dash"); loadDanhSach(); });
   document.getElementById("btn-new-top")?.addEventListener("click", () => showScreen("new"));
 
@@ -3437,246 +2713,3 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   bindIdleEvents();
 });
-// ── Override: phiếu điện tử riêng cho người bệnh (không lộ mã phiếu) ──
-function hasFormConfig() {
-  return Boolean(API_URL);
-}
-
-async function loadFormConfig() {
-  formConfig = { baseUrl: String(API_URL || "").trim() };
-  return formConfig;
-}
-
-async function showFormLinkModal(maPhieu) {
-  await loadFormConfig();
-  if (!API_URL) {
-    showAlert("form-alert", "Chưa cấu hình URL Apps Script.", "error");
-    return;
-  }
-  const hoTen = normalizePatientName(document.getElementById("f_ten")?.value || "");
-  let link = "";
-  try {
-    const res = await apiGet("create-patient-link", { ma: maPhieu });
-    link = String(res?.link || "").trim();
-    if (!link) throw new Error("Không tạo được link phiếu cho người bệnh.");
-  } catch (e) {
-    if (handleAuthError(e, "form-alert")) return;
-    showAlert("form-alert", "Lỗi tạo link phiếu: " + getFriendlyErrorMessage(e), "error");
-    return;
-  }
-
-  document.getElementById("form-link-modal")?.remove();
-  const modal = document.createElement("div");
-  modal.id = "form-link-modal";
-  modal.style.cssText = "position:fixed;inset:0;background:rgba(2,6,23,.68);backdrop-filter:blur(3px);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;";
-  modal.innerHTML = `
-    <div style="background:linear-gradient(180deg,#f8fffe 0%,#ffffff 100%);border-radius:22px;padding:22px;max-width:860px;width:100%;box-shadow:0 18px 60px rgba(15,23,42,.32);border:1px solid rgba(13,148,136,.16);">
-      <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;margin-bottom:18px;">
-        <div>
-          <div style="display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;background:#ccfbf1;color:#115e59;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;">Phiếu điện tử cho người bệnh</div>
-          <div style="font-size:24px;font-weight:800;color:#0f172a;margin-top:10px;letter-spacing:-.4px;">Quét mã để mở đúng phiếu khảo sát</div>
-          <div style="font-size:13px;color:#475569;margin-top:6px;line-height:1.6;max-width:520px;">Mã QR này mở trực tiếp phiếu điện tử riêng của người bệnh. Người dùng không nhìn thấy mã phiếu nội bộ, nhưng câu trả lời vẫn tự gắn đúng hồ sơ.</div>
-        </div>
-        <button class="btn btn-sm" style="min-width:92px;" onclick="document.getElementById('form-link-modal').remove()">Đóng</button>
-      </div>
-
-      <div style="display:grid;grid-template-columns:minmax(280px,340px) minmax(280px,1fr);gap:18px;align-items:stretch;">
-        <div style="background:linear-gradient(180deg,#0f766e 0%,#0d9488 100%);border-radius:24px;padding:18px;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:420px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.08);">
-          <div style="font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;opacity:.82;text-align:center;">NGƯỜI BỆNH QUÉT MÃ NÀY</div>
-          <div style="font-size:20px;font-weight:800;text-align:center;line-height:1.25;margin:10px 0 6px;">${escapeHtml(hoTen) || "Phiếu khảo sát trước mổ"}</div>
-          <div id="form-qr-wrap" style="display:flex;justify-content:center;align-items:center;margin:18px 0 12px;padding:18px;background:#fff;border-radius:22px;border:6px solid rgba(255,255,255,.18);min-height:284px;min-width:284px;cursor:pointer;box-shadow:0 12px 26px rgba(0,0,0,.18);" onclick="showQRFullscreen('${escapeHtml(link)}','${escapeHtml(hoTen)}')" title="Nhấn để phóng to toàn màn hình">
-            <div id="form-qr-container"></div>
-            <div id="form-qr-loading" style="font-size:12px;color:#64748b;">Đang tạo QR...</div>
-          </div>
-          <div style="font-size:12px;line-height:1.6;text-align:center;opacity:.88;max-width:250px;">Mở camera điện thoại hoặc Zalo → đưa vào mã QR → nhấn vào đường link hiện ra.</div>
-        </div>
-
-        <div style="display:flex;flex-direction:column;gap:14px;min-height:420px;">
-          <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:18px;padding:16px;">
-            <div style="font-size:14px;font-weight:800;color:#0f172a;margin-bottom:10px;">Cách dùng tại giường bệnh</div>
-            <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;">
-              <div style="background:#fff;border:1px solid #dbeafe;border-radius:14px;padding:12px;">
-                <div style="font-size:20px;margin-bottom:6px;">1️⃣</div>
-                <div style="font-size:12px;font-weight:700;color:#0f172a;">Đưa điện thoại</div>
-                <div style="font-size:11px;color:#64748b;line-height:1.5;">Bệnh nhân hoặc người nhà mở camera.</div>
-              </div>
-              <div style="background:#fff;border:1px solid #ccfbf1;border-radius:14px;padding:12px;">
-                <div style="font-size:20px;margin-bottom:6px;">2️⃣</div>
-                <div style="font-size:12px;font-weight:700;color:#0f172a;">Quét mã</div>
-                <div style="font-size:11px;color:#64748b;line-height:1.5;">Giữ cách QR khoảng 15–25 cm để nhận link nhanh.</div>
-              </div>
-              <div style="background:#fff;border:1px solid #ede9fe;border-radius:14px;padding:12px;">
-                <div style="font-size:20px;margin-bottom:6px;">3️⃣</div>
-                <div style="font-size:12px;font-weight:700;color:#0f172a;">Điền khảo sát</div>
-                <div style="font-size:11px;color:#64748b;line-height:1.5;">Phiếu đã liên kết đúng hồ sơ, chỉ cần trả lời câu hỏi.</div>
-              </div>
-            </div>
-          </div>
-
-          <div style="background:#fff;border:1px solid #dbe4f0;border-radius:18px;padding:16px;">
-            <div style="font-size:12px;font-weight:800;color:#0f172a;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">Link dự phòng</div>
-            <div style="background:#f8fafc;border-radius:12px;padding:12px;font-size:11px;font-family:'DM Mono',monospace;word-break:break-all;color:#475569;border:1px dashed #cbd5e1;max-height:82px;overflow-y:auto;">${escapeHtml(link)}</div>
-            <div style="font-size:11px;color:#64748b;line-height:1.6;margin-top:8px;">Dùng khi điện thoại không quét được QR hoặc muốn gửi bệnh nhân qua Zalo/SMS.</div>
-          </div>
-
-          <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;">
-            <button class="btn btn-primary btn-sm" style="width:100%;padding:12px 10px;" onclick="showQRFullscreen('${escapeHtml(link)}','${escapeHtml(hoTen)}')">🖥️ Mở QR lớn</button>
-            <button class="btn btn-sm" style="width:100%;padding:12px 10px;background:#0f766e;color:#fff;border-color:#0f766e;" onclick="printQRCodeCard('${escapeHtml(link)}','${escapeHtml(hoTen)}')">🖨️ In thẻ QR</button>
-            <button class="btn btn-sm" style="width:100%;padding:12px 10px;background:#1d4ed8;color:#fff;border-color:#1d4ed8;" onclick="printPatientPaperForm('${escapeHtml(link)}','${escapeHtml(hoTen)}')">📝 In phiếu giấy</button>
-            <button class="btn btn-sm" style="width:100%;padding:12px 10px;" onclick="copyFormLink('${escapeHtml(link)}',this)">📋 Sao chép link</button>
-            <button class="btn btn-sm" style="width:100%;padding:12px 10px;background:var(--green-600);color:#fff;border-color:var(--green-600);" onclick="shareFormViaZalo('${escapeHtml(link)}','${escapeHtml(hoTen)}',this)">💬 Gửi Zalo / SMS</button>
-            <button class="btn btn-sm" style="width:100%;padding:12px 10px;background:#fff7ed;color:#9a3412;border-color:#fed7aa;" onclick="showPrintablePaperGuide()">ℹ️ Hướng dẫn phiếu giấy</button>
-          </div>
-        </div>
-      </div>
-    </div>`;
-  document.body.appendChild(modal);
-  modal.addEventListener("click", e => { if (e.target === modal) modal.remove(); });
-  _loadQRCode(() => {
-    const qrEl = document.getElementById("form-qr-container");
-    const loading = document.getElementById("form-qr-loading");
-    if (loading) loading.style.display = "none";
-    if (qrEl && typeof QRCode !== "undefined") {
-      new QRCode(qrEl, { text: link, width: 240, height: 240, colorDark: "#0f172a", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.H });
-    }
-  });
-}
-
-function showQRFullscreen(link, hoTen) {
-  document.getElementById("form-qr-fullscreen")?.remove();
-  const overlay = document.createElement("div");
-  overlay.id = "form-qr-fullscreen";
-  overlay.style.cssText = "position:fixed;inset:0;z-index:99999;cursor:pointer;background:radial-gradient(circle at top,#14b8a6 0%,#0f766e 38%,#0f172a 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;";
-  overlay.innerHTML = `
-    <div style="width:min(960px,100%);display:grid;grid-template-columns:minmax(320px,420px) minmax(260px,1fr);gap:24px;align-items:center;">
-      <div style="background:#fff;border-radius:30px;padding:28px;box-shadow:0 24px 70px rgba(0,0,0,.35);display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:520px;">
-        <div style="font-size:13px;font-weight:800;color:#0f766e;letter-spacing:.12em;text-transform:uppercase;text-align:center;">NGƯỜI BỆNH QUÉT MÃ NÀY</div>
-        <div id="qr-fs-box" style="margin:20px 0 16px;"></div>
-        <div style="font-size:14px;font-weight:700;color:#0f172a;text-align:center;">${escapeHtml(hoTen) || "Phiếu khảo sát"}</div>
-      </div>
-      <div style="color:#fff;">
-        <div style="display:inline-flex;align-items:center;gap:8px;padding:7px 13px;border-radius:999px;background:rgba(255,255,255,.12);font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;margin-bottom:14px;">Phiếu khảo sát trước phẫu thuật</div>
-        <div style="font-size:44px;font-weight:900;line-height:1.05;letter-spacing:-1px;max-width:440px;">Quét mã để mở đúng phiếu</div>
-        <div style="font-size:16px;line-height:1.7;opacity:.92;margin-top:16px;max-width:430px;">Chỉ cần mở camera điện thoại, hướng vào mã QR và nhấn vào đường link hiện ra. Người dùng không cần nhập mã phiếu.</div>
-      </div>
-    </div>
-    <div style="position:absolute;top:18px;right:22px;color:#fff;font-size:12px;opacity:.72;">Chạm bất kỳ đâu để đóng</div>`;
-  document.body.appendChild(overlay);
-  document.body.style.overflow = "hidden";
-  overlay.addEventListener("click", () => {
-    overlay.remove();
-    document.body.style.overflow = "";
-  });
-  _loadQRCode(() => {
-    const box = document.getElementById("qr-fs-box");
-    if (!box || typeof QRCode === "undefined") return;
-    const size = Math.min(window.innerWidth * 0.34, 360);
-    new QRCode(box, { text: link, width: size, height: size, colorDark: "#0f172a", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.H });
-  });
-}
-
-function printQRCodeCard(link, hoTen) {
-  const win = window.open("", "_blank", "width=820,height=980");
-  if (!win) {
-    alert("Trình duyệt đang chặn cửa sổ in. Hãy cho phép popup rồi thử lại.");
-    return;
-  }
-  const safeName = escapeHtml(hoTen || "Phiếu khảo sát");
-  const safeLink = escapeHtml(link || "");
-  win.document.write(`<!doctype html>
-<html lang="vi"><head><meta charset="UTF-8"><title>Thẻ QR khảo sát</title>
-<style>
-@page { size: A4 portrait; margin: 12mm; }
-body { font-family: Arial, sans-serif; margin: 0; background: #e6fffb; }
-.sheet { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 12mm; box-sizing: border-box; }
-.card { width: 100%; max-width: 176mm; min-height: 250mm; background: linear-gradient(180deg,#0f766e 0%,#0f172a 100%); color: #fff; border-radius: 10mm; padding: 14mm; box-sizing: border-box; position: relative; overflow: hidden; }
-.badge { display: inline-block; padding: 3mm 6mm; border-radius: 999px; background: rgba(255,255,255,.14); font-size: 10pt; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-h1 { font-size: 28pt; line-height: 1.08; margin: 8mm 0 4mm; }
-.sub { font-size: 12pt; line-height: 1.7; opacity: .92; max-width: 120mm; }
-.grid { display: grid; grid-template-columns: 88mm 1fr; gap: 10mm; align-items: center; margin-top: 10mm; }
-.qrbox { background: #fff; border-radius: 8mm; padding: 8mm; box-shadow: 0 8mm 20mm rgba(0,0,0,.25); text-align: center; }
-.steps { display: grid; gap: 4mm; }
-.step { background: rgba(255,255,255,.10); border: .4mm solid rgba(255,255,255,.16); border-radius: 5mm; padding: 4mm 5mm; }
-.step b { display: block; font-size: 12pt; margin-bottom: 1.5mm; }
-.foot { position: absolute; left: 14mm; right: 14mm; bottom: 12mm; background: rgba(255,255,255,.08); border-radius: 5mm; padding: 4mm 5mm; font-size: 9pt; line-height: 1.6; }
-.code { font-family: 'Courier New', monospace; font-size: 10pt; }
-</style></head>
-<body><div class="sheet"><div class="card">
-<div class="badge">Người bệnh quét mã này</div>
-<h1>Quét QR để mở đúng phiếu khảo sát</h1>
-<div class="sub">Mở camera hoặc Zalo trên điện thoại, hướng vào mã QR và nhấn vào đường link hiện ra để bắt đầu điền khảo sát.</div>
-<div class="grid">
-<div class="qrbox"><div id="qr-print" style="display:flex;justify-content:center;"></div><div style="margin-top:4mm;font-weight:700;color:#0f172a;">${safeName}</div></div>
-<div class="steps"><div class="step"><b>1. Mở camera / Zalo</b><span>Dùng điện thoại của bệnh nhân hoặc người nhà.</span></div><div class="step"><b>2. Quét mã QR</b><span>Giữ điện thoại cách mã khoảng 15–25 cm để nhận diện nhanh.</span></div><div class="step"><b>3. Nhấn vào link hiện ra</b><span>Phiếu đã liên kết đúng hồ sơ, chỉ cần trả lời câu hỏi.</span></div></div>
-</div><div class="foot">Link dự phòng: <span class="code">${safeLink}</span></div>
-</div></div>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<script>window.onload=function(){new QRCode(document.getElementById('qr-print'),{text:LINK_PLACEHOLDER,width:300,height:300,colorDark:'#0f172a',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.H});setTimeout(function(){window.print();},500);};</script>
-</body></html>`.replace('LINK_PLACEHOLDER', JSON.stringify(link || '')));
-  win.document.close();
-}
-
-function printPatientPaperForm(link, hoTen) {
-  const win = window.open("", "_blank", "width=980,height=1200");
-  if (!win) {
-    alert("Trình duyệt đang chặn cửa sổ in. Hãy cho phép popup rồi thử lại.");
-    return;
-  }
-  const safeName = escapeHtml(hoTen || "____________________________");
-  const loAuItems = (window.NGUYEN_NHAN_LO_AU || []).map(item => `<span class="tick">☐ ${escapeHtml(item)}</span>`).join("");
-  const rlgnItems = (window.NGUYEN_NHAN_RLGN || []).map(item => `<span class="tick">☐ ${escapeHtml(item)}</span>`).join("");
-  const hadsRows = (window.HADS_DATA || []).map((item, idx) => `<tr><td class="stt">${idx + 1}</td><td>${escapeHtml(item.q || "")}</td><td class="opt">☐ 0</td><td class="opt">☐ 1</td><td class="opt">☐ 2</td><td class="opt">☐ 3</td></tr>`).join("");
-  const aisRows = (window.AIS5_ITEMS || []).map((item, idx) => `<tr><td class="stt">${idx + 1}</td><td>${escapeHtml(item.label || "")}</td><td class="opt">☐ 0</td><td class="opt">☐ 1</td><td class="opt">☐ 2</td><td class="opt">☐ 3</td></tr>`).join("");
-  win.document.write(`<!doctype html>
-<html lang="vi"><head><meta charset="UTF-8"><title>Phiếu giấy khảo sát người bệnh</title>
-<style>
-@page { size: A4 portrait; margin: 10mm; }
-body { font-family: Arial, sans-serif; color:#111827; margin:0; }
-.page { page-break-after: always; padding: 0; }
-.page:last-child { page-break-after: auto; }
-.frame { border: 1px solid #cbd5e1; border-radius: 4mm; padding: 6mm; box-sizing: border-box; }
-h1 { font-size: 18pt; margin: 0 0 2mm; text-align:center; }
-h2 { font-size: 12pt; margin: 5mm 0 2mm; color:#0f766e; }
-.sub { text-align:center; font-size: 10pt; color:#475569; margin-bottom: 4mm; }
-.meta { display:grid; grid-template-columns: 1fr 1fr; gap: 3mm 6mm; font-size:10.5pt; }
-.line { border-bottom: 1px dotted #64748b; min-height: 6mm; display:inline-block; width:100%; }
-table { width:100%; border-collapse: collapse; font-size:9.4pt; }
-th, td { border:1px solid #cbd5e1; padding: 2.2mm; vertical-align: top; }
-th { background:#f8fafc; }
-.stt { width: 8mm; text-align:center; }
-.opt { width: 11mm; text-align:center; white-space: nowrap; }
-.ticks { display:flex; flex-wrap:wrap; gap: 2mm 4mm; font-size:10pt; }
-.tick { min-width: 46%; }
-.box { border:1px solid #cbd5e1; border-radius:3mm; padding:3mm 4mm; margin-top:2mm; min-height: 14mm; }
-.note { font-size:9pt; color:#475569; line-height:1.5; }
-</style></head>
-<body>
-<div class="page"><div class="frame"><h1>PHIẾU KHẢO SÁT NGƯỜI BỆNH</h1><div class="sub">Dành cho người bệnh không sử dụng điện thoại / mã QR. Sau khi điền giấy, điều tra viên nhập lại vào phiếu điện tử.</div><div class="meta"><div><b>Họ tên người bệnh:</b> <span class="line">${safeName}</span></div><div><b>Mã BN / Số hồ sơ:</b> <span class="line"></span></div><div><b>Ngày điền:</b> <span class="line"></span></div><div><b>Ký tên người bệnh/người nhà:</b> <span class="line"></span></div></div><h2>B1. Thang HADS — 14 câu</h2><table><thead><tr><th class="stt">STT</th><th>Nội dung</th><th class="opt">0</th><th class="opt">1</th><th class="opt">2</th><th class="opt">3</th></tr></thead><tbody>${hadsRows}</tbody></table></div></div>
-<div class="page"><div class="frame"><h2>B2. Chỉ số PSQI — Chất lượng giấc ngủ</h2><div class="meta"><div><b>PSQI-1. Giờ đi ngủ:</b> <span class="line"></span></div><div><b>PSQI-3. Giờ thức dậy:</b> <span class="line"></span></div><div><b>PSQI-2. Mất bao lâu để ngủ được (phút):</b> <span class="line"></span></div><div><b>PSQI-4. Ngủ thực sự bao nhiêu giờ/đêm:</b> <span class="line"></span></div></div><h2>PSQI-5a đến 5j — Trong tháng qua, vấn đề này xảy ra bao nhiêu lần?</h2><table><thead><tr><th>Nội dung</th><th class="opt">0</th><th class="opt">1</th><th class="opt">2</th><th class="opt">3</th></tr></thead><tbody><tr><td>PSQI-5a. Mất hơn 30 phút để ngủ</td><td class="opt">☐</td><td class="opt">☐</td><td class="opt">☐</td><td class="opt">☐</td></tr><tr><td>PSQI-5b. Thức dậy giữa đêm hoặc quá sớm</td><td class="opt">☐</td><td class="opt">☐</td><td class="opt">☐</td><td class="opt">☐</td></tr><tr><td>PSQI-5c. Phải thức dậy để đi vệ sinh</td><td class="opt">☐</td><td class="opt">☐</td><td class="opt">☐</td><td class="opt">☐</td></tr><tr><td>PSQI-5d. Không thể thở thoải mái</td><td class="opt">☐</td><td class="opt">☐</td><td class="opt">☐</td><td class="opt">☐</td></tr><tr><td>PSQI-5e. Ho hoặc ngáy to</td><td class="opt">☐</td><td class="opt">☐</td><td class="opt">☐</td><td class="opt">☐</td></tr><tr><td>PSQI-5f. Cảm thấy quá lạnh</td><td class="opt">☐</td><td class="opt">☐</td><td class="opt">☐</td><td class="opt">☐</td></tr><tr><td>PSQI-5g. Cảm thấy quá nóng</td><td class="opt">☐</td><td class="opt">☐</td><td class="opt">☐</td><td class="opt">☐</td></tr><tr><td>PSQI-5h. Có ác mộng</td><td class="opt">☐</td><td class="opt">☐</td><td class="opt">☐</td><td class="opt">☐</td></tr><tr><td>PSQI-5i. Đau làm ảnh hưởng giấc ngủ</td><td class="opt">☐</td><td class="opt">☐</td><td class="opt">☐</td><td class="opt">☐</td></tr><tr><td>PSQI-5j. Lý do khác</td><td class="opt">☐</td><td class="opt">☐</td><td class="opt">☐</td><td class="opt">☐</td></tr></tbody></table><div class="box"><b>Mô tả lý do khác (PSQI-5j):</b></div><div class="meta" style="margin-top:4mm;"><div><b>PSQI-6. Chất lượng giấc ngủ tổng thể:</b> ☐ Rất tốt ☐ Tương đối tốt ☐ Tương đối kém ☐ Rất kém</div><div><b>PSQI-7. Dùng thuốc ngủ/tuần:</b> ☐ Không ☐ <1/tuần ☐ 1–2/tuần ☐ ≥3/tuần</div><div><b>PSQI-8. Khó giữ tỉnh táo ban ngày:</b> ☐ Không ☐ <1/tuần ☐ 1–2/tuần ☐ ≥3/tuần</div><div><b>PSQI-9. Ảnh hưởng sinh hoạt hàng ngày:</b> ☐ Không ☐ Nhẹ ☐ Vừa ☐ Nhiều</div></div></div></div>
-<div class="page"><div class="frame"><h2>B3. Thang AIS-5 — Rối loạn giấc ngủ</h2><table><thead><tr><th class="stt">STT</th><th>Nội dung</th><th class="opt">0</th><th class="opt">1</th><th class="opt">2</th><th class="opt">3</th></tr></thead><tbody>${aisRows}</tbody></table><h2>B4. Nguyên nhân lo âu trước phẫu thuật</h2><div class="ticks">${loAuItems}</div><div class="box"><b>Nguyên nhân khác:</b></div><h2>B5. Nguyên nhân rối loạn giấc ngủ</h2><div class="ticks">${rlgnItems}</div><div class="box"><b>Khác:</b></div><div class="note" style="margin-top:4mm;">Link điện tử dự phòng dành cho nhân viên y tế: ${escapeHtml(link || "")}</div></div></div>
-<script>window.onload=function(){setTimeout(function(){window.print();},400);};</script></body></html>`);
-  win.document.close();
-}
-
-async function checkStep2FromForm() {
-  if (!currentMaPhieu) return;
-  const btn = document.getElementById("btn-check-form");
-  if (btn) { btn.disabled = true; btn.textContent = "⏳ Đang kiểm tra..."; }
-  try {
-    const res = await apiGet("check-form-step2", { ma: currentMaPhieu });
-    if (res?.submitted) {
-      applyFormData(res.data || {});
-      calcHADS(); calcPSQI(); calcAIS5(); restoreSelectionHighlights();
-      _setStep2FormBadge("done", res.submitted_at);
-      showAlert("form-alert", "✓ Đã tải kết quả phiếu người bệnh. Kiểm tra lại rồi nhấn Lưu.", "success");
-    } else {
-      _setStep2FormBadge("waiting");
-      showAlert("form-alert", "Người bệnh chưa gửi phiếu. Hãy chia sẻ link/QR rồi thử lại sau.", "info");
-    }
-  } catch (e) {
-    if (handleAuthError(e, "form-alert")) return;
-    showAlert("form-alert", "Lỗi kiểm tra: " + getFriendlyErrorMessage(e), "error");
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = "🔄 Kiểm tra kết quả"; }
-  }
-}

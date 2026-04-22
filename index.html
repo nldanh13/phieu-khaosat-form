@@ -3,111 +3,278 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Khảo sát trước phẫu thuật</title>
+  <title>Phiếu Thu Thập Số Liệu — ĐH Y Dược Cần Thơ</title>
+  <link rel="stylesheet" href="./assets/css/styles.css">
   <style>
-    :root{--bg:#f4f7fb;--card:#fff;--text:#0f172a;--muted:#64748b;--line:#dbe3ee;--primary:#0f766e;--primary2:#14b8a6;--danger:#dc2626;--soft:#ecfeff}
-    *{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;background:linear-gradient(180deg,#ecfeff 0,var(--bg) 180px);color:var(--text)}
-    .wrap{max-width:960px;margin:0 auto;padding:18px 14px 40px}.hero{background:linear-gradient(135deg,var(--primary) 0,#0f172a 120%);color:#fff;border-radius:24px;padding:24px 22px;box-shadow:0 20px 40px rgba(15,23,42,.16);margin-bottom:18px}
-    .badge{display:inline-flex;padding:6px 10px;border-radius:999px;background:rgba(255,255,255,.12);font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
-    h1{margin:12px 0 8px;font-size:34px;line-height:1.12}.hero p{margin:0;max-width:720px;line-height:1.65;font-size:15px;opacity:.94}
-    .card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:18px 16px;margin-bottom:14px;box-shadow:0 8px 20px rgba(15,23,42,.05)}
-    .title{margin:0 0 12px;font-size:20px}.desc{color:var(--muted);font-size:13px;line-height:1.6;margin-bottom:12px}.q-card{border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:12px}
-    .q-head{display:flex;gap:10px;align-items:flex-start;margin-bottom:10px}.q-num{min-width:34px;height:34px;border-radius:12px;background:var(--soft);color:var(--primary);font-weight:700;display:flex;align-items:center;justify-content:center;font-size:13px}
-    .q-text{font-size:15px;line-height:1.55}.options{display:grid;gap:8px}.opt{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);border-radius:14px;padding:10px 12px;cursor:pointer}.opt:hover,.multi label:hover{border-color:var(--primary2);background:#f8fffe}
-    .grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.field label{display:block;font-size:13px;font-weight:700;margin-bottom:6px}.field input,.field select,.field textarea{width:100%;border:1px solid var(--line);border-radius:12px;padding:11px 12px;font-size:14px;color:var(--text);background:#fff}.field textarea{min-height:84px;resize:vertical}
-    .multi{display:grid;gap:8px}.multi label{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);border-radius:14px;padding:10px 12px;cursor:pointer}
-    .bar{position:sticky;bottom:0;background:rgba(255,255,255,.94);backdrop-filter:blur(10px);border-top:1px solid var(--line);margin-top:16px}.bar-inner{max-width:960px;margin:0 auto;padding:12px 14px;display:flex;gap:10px;align-items:center;justify-content:space-between}.msg{font-size:13px;color:var(--muted)}
-    button{border:0;border-radius:14px;padding:12px 18px;font-size:14px;font-weight:700;cursor:pointer}.btn-primary{background:var(--primary);color:#fff}.btn-primary:disabled{opacity:.6;cursor:not-allowed}.req{color:var(--danger)}
-    .banner{border-radius:16px;padding:16px;margin-bottom:16px;font-size:14px;line-height:1.6}.ok{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}.err{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}.hidden{display:none!important}
-    @media(max-width:700px){h1{font-size:28px}.grid2{grid-template-columns:1fr}.bar-inner{flex-direction:column;align-items:stretch}.bar-inner button{width:100%}}
+    /* Nhãn trường bắt buộc */
+    .req { color: var(--red, #e53e3e); font-size: 11px; margin-left: 2px; }
+
+    /* ── Dashboard tabs ─────────────────────────────────────── */
+    .dash-tabs {
+      display: flex;
+      gap: 0;
+      margin-bottom: 20px;
+      border-bottom: 2px solid var(--border, #e2e8f0);
+    }
+    .dash-tab {
+      background: none;
+      border: none;
+      border-bottom: 3px solid transparent;
+      margin-bottom: -2px;
+      padding: 10px 22px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted, #718096);
+      cursor: pointer;
+      border-radius: 0;
+      transition: color .15s, border-color .15s, background .15s;
+      letter-spacing: .01em;
+    }
+    .dash-tab:hover { color: var(--primary, #1a7a6e); background: rgba(26,122,110,.05); }
+    .dash-tab.active {
+      color: var(--primary, #1a7a6e);
+      border-bottom-color: var(--primary, #1a7a6e);
+      background: none;
+    }
+
+    /* ── Tổng quan panel ──────────────────────────────────────── */
+    .tonghop-wrap { padding: 4px 0; }
+    .th-stat-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+    .th-stat-box {
+      background: var(--surface, #fff);
+      border: 1px solid var(--border, #e2e8f0);
+      border-radius: 12px;
+      padding: 16px 12px 14px;
+      text-align: center;
+    }
+    .th-stat-box.th-main { border-color: var(--primary, #1a7a6e); border-width: 2px; }
+    .th-num  { font-size: 32px; font-weight: 800; line-height: 1.1; color: var(--primary, #1a7a6e); }
+    .th-lbl  { font-size: 11px; color: var(--text-muted, #718096); margin-top: 5px; font-weight: 500; }
+    .th-green { color: #27ae60 !important; }
+    .th-amber { color: #e67e22 !important; }
+    .th-muted { color: var(--text-muted, #718096) !important; }
+
+    .th-progress-wrap { margin-bottom: 20px; }
+    .th-progress-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--text-muted, #718096);
+      margin-bottom: 6px;
+    }
+    .th-pct { font-weight: 700; color: var(--primary, #1a7a6e); font-size: 13px; }
+    .th-progress-bar {
+      background: var(--border, #e2e8f0);
+      border-radius: 8px;
+      height: 12px;
+      overflow: hidden;
+    }
+    .th-progress-fill {
+      background: linear-gradient(90deg, var(--primary, #1a7a6e), #2ecc9a);
+      height: 12px;
+      border-radius: 8px;
+      transition: width .8s cubic-bezier(.4,0,.2,1);
+      min-width: 2px;
+    }
+    .th-progress-sub {
+      font-size: 10px;
+      color: var(--text-muted, #718096);
+      margin-top: 4px;
+      text-align: right;
+    }
+
+    .th-section-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-muted, #718096);
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      margin: 20px 0 8px;
+    }
+    .th-table-wrap {
+      overflow-x: auto;
+      border-radius: 10px;
+      border: 1px solid var(--border, #e2e8f0);
+    }
+    .th-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .th-table thead tr { background: var(--surface-raised, #f7fafc); }
+    .th-table th {
+      padding: 9px 12px;
+      text-align: left;
+      font-weight: 600;
+      color: var(--text-muted, #718096);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      white-space: nowrap;
+    }
+    .th-table td { padding: 10px 12px; border-top: 1px solid var(--border, #e2e8f0); }
+    .th-table tbody tr:hover { background: rgba(0,0,0,.025); }
+    .th-table .tc { text-align: center; font-weight: 600; }
+
+    .th-mini-bar-wrap { display: flex; align-items: center; gap: 7px; min-width: 110px; }
+    .th-mini-bar { flex: 1; background: var(--border, #e2e8f0); border-radius: 4px; height: 7px; overflow: hidden; }
+    .th-mini-fill { background: var(--primary, #1a7a6e); height: 7px; border-radius: 4px; transition: width .5s; }
+    .th-mini-pct { font-size: 11px; color: var(--text-muted, #718096); min-width: 34px; text-align: right; font-weight: 600; }
+
+    .th-empty { font-size: 13px; color: var(--text-muted, #718096); padding: 24px 0; text-align: center; }
+    .tonghop-loading { font-size: 13px; color: var(--text-muted, #718096); padding: 32px 0; text-align: center; }
+
+    @media (max-width: 600px) {
+      .th-stat-row { grid-template-columns: repeat(2, 1fr); }
+      .dash-tab { padding: 9px 14px; font-size: 12px; }
+    }
   </style>
 </head>
 <body>
-<? var pageOk = !!(ctx && ctx.ok); ?>
-<div class="wrap">
-<? if (!pageOk) { ?>
-  <div class="hero"><div class="badge">Khảo sát trước phẫu thuật</div><h1>Liên kết không khả dụng</h1><p>Vui lòng liên hệ nhân viên y tế để được cấp lại phiếu phù hợp.</p></div>
-  <div class="banner err"><?= ctx && ctx.reason ? ctx.reason : "Liên kết không hợp lệ." ?></div>
-<? } else { ?>
-  <div class="hero"><div class="badge">Khảo sát trước phẫu thuật</div><h1>Phiếu khảo sát dành cho người bệnh</h1><p>Vui lòng trả lời các câu hỏi bên dưới theo đúng tình trạng của mình. Hệ thống đã tự liên kết với đúng hồ sơ, nên bạn không cần nhập mã phiếu.</p></div>
-  <div class="card" style="background:#f8fffe;border-color:#bfeee8"><div style="font-size:15px;font-weight:700;color:var(--primary);margin-bottom:4px">Người bệnh: <?= ctx.patientName || "Người bệnh" ?></div><div style="font-size:13px;color:var(--muted);line-height:1.6">Phiếu này chỉ dùng để điền khảo sát bước 2 trước phẫu thuật. Sau khi hoàn tất, nhấn <strong>Gửi phiếu</strong> ở cuối trang.</div></div>
 
-  <form id="patient-form">
-    <div class="card"><h2 class="title">B1. Thang HADS — 14 câu <span class="req">*</span></h2><div class="desc">Mỗi câu chọn một đáp án phù hợp nhất với bạn.</div><div id="hads-wrap"></div></div>
+  <div class="loading-overlay" id="loading">
+    <div class="loading-box"><div class="spinner"></div> Đang lưu dữ liệu...</div>
+  </div>
 
-    <div class="card">
-      <h2 class="title">B2. Chỉ số PSQI — Chất lượng giấc ngủ <span class="req">*</span></h2>
-      <div class="grid2">
-        <div class="field"><label>PSQI-1. Giờ đi ngủ</label><input type="time" id="psqi1" required></div>
-        <div class="field"><label>PSQI-3. Giờ thức dậy</label><input type="time" id="psqi3" required></div>
-        <div class="field"><label>PSQI-2. Mất bao lâu để ngủ được (phút)</label><input type="number" id="psqi2" min="0" max="600" required></div>
-        <div class="field"><label>PSQI-4. Ngủ thực sự bao nhiêu giờ/đêm</label><input type="number" id="psqi4" min="0" max="24" step="0.5" required></div>
-      </div>
-      <div class="grid2" style="margin-top:12px"><div class="field"><label>PSQI-5a. Mất hơn 30 phút để ngủ</label><select id="psqi5a" required><option value="">Chọn...</option><option value="0">Không lần nào</option><option value="1">Dưới 1 lần/tuần</option><option value="2">1–2 lần/tuần</option><option value="3">Từ 3 lần/tuần trở lên</option></select></div></div>
-      <div class="desc" style="margin-top:14px">Đánh giá tần suất các vấn đề giấc ngủ sau đây.</div>
-      <div id="psqi5-wrap"></div>
-      <div class="grid2" style="margin-top:12px">
-        <div class="field"><label>PSQI-6. Chất lượng giấc ngủ tổng thể</label><select id="psqi6" required><option value="">Chọn...</option><option value="0">Rất tốt</option><option value="1">Tương đối tốt</option><option value="2">Tương đối kém</option><option value="3">Rất kém</option></select></div>
-        <div class="field"><label>PSQI-7. Dùng thuốc ngủ</label><select id="psqi7" required><option value="">Chọn...</option><option value="0">Không lần nào</option><option value="1">Dưới 1 lần/tuần</option><option value="2">1–2 lần/tuần</option><option value="3">Từ 3 lần/tuần trở lên</option></select></div>
-        <div class="field"><label>PSQI-8. Khó giữ tỉnh táo ban ngày</label><select id="psqi8" required><option value="">Chọn...</option><option value="0">Không lần nào</option><option value="1">Dưới 1 lần/tuần</option><option value="2">1–2 lần/tuần</option><option value="3">Từ 3 lần/tuần trở lên</option></select></div>
-        <div class="field"><label>PSQI-9. Ảnh hưởng đến sinh hoạt hàng ngày</label><select id="psqi9" required><option value="">Chọn...</option><option value="0">Không ảnh hưởng</option><option value="1">Ảnh hưởng nhẹ</option><option value="2">Ảnh hưởng vừa</option><option value="3">Ảnh hưởng nhiều</option></select></div>
+  <div class="topbar">
+    <div>
+      <div class="topbar-brand">Phiếu Thu Thập Số Liệu Nghiên Cứu</div>
+      <div class="topbar-sub">Khoa Ngoại CTCH-TK — ĐH Y Dược Cần Thơ</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <button class="btn btn-sm" id="btn-dash" style="display:none">← Dashboard</button>
+      <button class="btn btn-sm btn-primary" id="btn-new-top" style="display:none">+ Phiếu mới</button>
+      <!-- Avatar + dropdown đăng xuất -->
+      <div class="avatar-wrap" id="avatar-wrap" style="display:none;position:relative;">
+        <button class="avatar-btn" id="avatar-btn" onclick="toggleAvatarMenu()" title="Thông tin tài khoản">
+          <span id="avatar-initials">?</span>
+        </button>
+        <div class="avatar-menu" id="avatar-menu" style="display:none;">
+          <div class="avatar-menu-name" id="avatar-menu-name">—</div>
+          <div class="avatar-menu-role" id="avatar-menu-role">—</div>
+          <hr style="margin:8px 0;border:none;border-top:1px solid var(--border);">
+          <button class="avatar-menu-logout" onclick="doLogout()">Đăng xuất</button>
+        </div>
       </div>
     </div>
+  </div>
 
-    <div class="card"><h2 class="title">B3. Thang AIS-5 — Rối loạn giấc ngủ <span class="req">*</span></h2><div class="desc">Mỗi câu chọn một đáp án phù hợp nhất.</div><div id="ais-wrap"></div></div>
+  <!-- LOGIN -->
+  <div id="screen-login" class="screen active">
+    <div class="container" style="max-width:400px;padding-top:60px;">
+      <div class="card">
+        <div class="card-title">Đăng nhập</div>
+        <div id="login-alert" class="alert alert-error hidden"></div>
+        <div class="form-group" style="margin-bottom:10px;">
+          <label>Tên đăng nhập</label>
+          <input type="text" id="inp-user" placeholder="Nhập tên đăng nhập">
+        </div>
+        <div class="form-group" style="margin-bottom:14px;">
+          <label>Mật khẩu</label>
+          <input type="password" id="inp-pass" onkeydown="if(event.key==='Enter')doLogin()">
+        </div>
+        <button class="btn btn-primary" style="width:100%" onclick="doLogin()">Đăng nhập</button>
+        <p style="font-size:11px;color:var(--text-muted);margin-top:10px;text-align:center;">
+          Liên hệ quản trị viên để được cấp tài khoản.
+        </p>
+      </div>
+    </div>
+  </div>
 
-    <div class="card"><h2 class="title">B4. Nguyên nhân lo âu trước phẫu thuật</h2><div class="desc">Có thể chọn nhiều đáp án. Nếu chọn <strong>Không lo lắng</strong>, các lựa chọn khác sẽ tự bỏ chọn.</div><div class="multi" id="loau-wrap"></div><div class="field" style="margin-top:12px"><label>Nguyên nhân khác</label><textarea id="loau-khac" placeholder="Nếu có, vui lòng ghi rõ..."></textarea></div></div>
+  <!-- DASHBOARD -->
+  <div id="screen-dash" class="screen">
+    <div class="container">
+      <div id="dash-alert" class="alert hidden"></div>
 
-    <div class="card"><h2 class="title">B5. Nguyên nhân rối loạn giấc ngủ</h2><div class="desc">Có thể chọn nhiều đáp án.</div><div class="multi" id="rlgn-wrap"></div><div class="field" style="margin-top:12px"><label>Khác</label><textarea id="rlgn-khac" placeholder="Nếu có, vui lòng ghi rõ..."></textarea></div></div>
+      <!-- Tab bar -->
+      <div class="dash-tabs">
+        <button class="dash-tab active" id="dash-tab-mine"    onclick="switchDashTab('mine')">📋 Danh sách phiếu</button>
+        <button class="dash-tab"        id="dash-tab-overall" onclick="switchDashTab('overall')">📊 Tổng quan nghiên cứu</button>
+      </div>
 
-    <div id="submit-ok" class="banner ok hidden"></div>
-    <div id="submit-err" class="banner err hidden"></div>
-  </form>
-<? } ?>
-</div>
+      <!-- Tab: Phiếu của tôi -->
+      <div id="dash-panel-mine">
+        <div class="stat-grid" id="stat-grid">
+          <div class="stat-card"><div class="stat-num">—</div><div class="stat-lbl">Tổng phiếu</div></div>
+          <div class="stat-card"><div class="stat-num">—</div><div class="stat-lbl">Phiếu của tôi</div></div>
+          <div class="stat-card"><div class="stat-num">—</div><div class="stat-lbl">Đang điền</div></div>
+          <div class="stat-card"><div class="stat-num">—</div><div class="stat-lbl">Hoàn thành</div></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <div style="font-size:13px;font-weight:600;">Danh sách phiếu dùng chung</div>
+          <div class="btn-group">
+            <button class="btn btn-sm" onclick="loadDanhSach()">↻ Tải lại</button>
+            <button class="btn btn-sm btn-primary" onclick="showScreen('new')">+ Phiếu mới</button>
+          </div>
+        </div>
+        <div id="phieu-list"></div>
+      </div>
 
-<? if (pageOk) { ?>
-<div class="bar"><div class="bar-inner"><div class="msg">Vui lòng kiểm tra lại câu trả lời trước khi gửi.</div><button class="btn-primary" id="submit-btn" type="button">Gửi phiếu</button></div></div>
-<script>
-const API_URL = <?= JSON.stringify(apiUrl) ?>;
-const PATIENT_TOKEN = <?= JSON.stringify(ctx.token) ?>;
-const HADS_DATA = [
-  {id:1,q:"Tôi cảm thấy căng thẳng hoặc bồn chồn:",opts:["Không bao giờ (0)","Đôi khi (1)","Thường xuyên (2)","Hầu hết lúc (3)"]},
-  {id:2,q:"Tôi vẫn thưởng thức được những điều từng làm tôi thích thú:",opts:["Vẫn như trước (0)","Chỉ một ít (1)","Không nhiều như trước (2)","Chắc chắn không (3)"]},
-  {id:3,q:"Tôi có cảm giác sợ hãi như thể có điều gì xấu sắp xảy ra:",opts:["Hoàn toàn không (0)","Một chút nhưng không lo (1)","Đúng vậy và khá lo (2)","Chắc chắn và rất nhiều (3)"]},
-  {id:4,q:"Tôi có thể cười và nhìn thấy mặt vui của sự việc:",opts:["Thường xuyên như trước (0)","Thỉnh thoảng (1)","Không nhiều lắm (2)","Hoàn toàn không (3)"]},
-  {id:5,q:"Đầu óc tôi căng thẳng với những mối lo:",opts:["Thỉnh thoảng (0)","Thỉnh thoảng nhưng không thường (1)","Thường xuyên (2)","Hầu hết lúc (3)"]},
-  {id:6,q:"Tôi cảm thấy vui vẻ:",opts:["Thường xuyên (0)","Đôi khi (1)","Không thường xuyên (2)","Hoàn toàn không (3)"]},
-  {id:7,q:"Tôi có thể ngồi thư giãn và thoải mái:",opts:["Chắc chắn (0)","Thường thì có (1)","Không thường xuyên (2)","Hoàn toàn không thể (3)"]},
-  {id:8,q:"Tôi cảm thấy như mình đang chậm lại:",opts:["Hoàn toàn không (0)","Đôi khi (1)","Thường xuyên (2)","Hầu hết lúc (3)"]},
-  {id:9,q:"Tôi có cảm giác lo lắng / sợ hãi:",opts:["Hoàn toàn không (0)","Đôi khi (1)","Thường xuyên (2)","Rất thường xuyên (3)"]},
-  {id:10,q:"Tôi không còn quan tâm đến bề ngoài của mình:",opts:["Vẫn như trước (0)","Ít quan tâm hơn (1)","Không để tâm nhiều (2)","Hoàn toàn không (3)"]},
-  {id:11,q:"Tôi cảm thấy bồn chồn như thể phải đứng dậy và vận động:",opts:["Hoàn toàn không (0)","Không nhiều (1)","Khá nhiều (2)","Thực sự rất nhiều (3)"]},
-  {id:12,q:"Tôi mong chờ những điều thú vị sắp xảy ra:",opts:["Như tôi thường làm (0)","Ít hơn trước (1)","Chắc chắn ít hơn (2)","Hầu như không bao giờ (3)"]},
-  {id:13,q:"Tôi đột nhiên có cảm giác hoảng loạn:",opts:["Hoàn toàn không (0)","Không thường xuyên (1)","Thường xuyên (2)","Rất thường xuyên (3)"]},
-  {id:14,q:"Tôi tìm thấy niềm vui trong cuốn sách hay hoặc chương trình TV:",opts:["Thường xuyên (0)","Đôi khi (1)","Không thường xuyên (2)","Hiếm khi (3)"]}
-];
-const PSQI5_ITEMS=["5b. Thức giấc giữa đêm hoặc thức dậy quá sớm","5c. Phải dậy đi vệ sinh","5d. Không thở thoải mái","5e. Ho hoặc ngáy to","5f. Cảm thấy quá lạnh","5g. Cảm thấy quá nóng","5h. Có ác mộng","5i. Bị đau nhức","5j. Lý do khác"];
-const AIS5_ITEMS=[{id:1,label:"Khởi phát giấc ngủ",desc:"Thời gian để ngủ sau khi tắt đèn"},{id:2,label:"Thức giấc giữa đêm",desc:"Tỉnh giấc nhiều lần trong đêm"},{id:3,label:"Thức dậy sớm",desc:"Dậy sớm hơn mong muốn"},{id:4,label:"Tổng thời gian ngủ",desc:"Cảm nhận về thời lượng ngủ"},{id:5,label:"Chất lượng giấc ngủ",desc:"Độ sâu và sự thoải mái của giấc ngủ"}];
-const AIS_OPTS=["Không vấn đề (0)","Mức độ nhẹ (1)","Mức độ vừa (2)","Mức độ nặng (3)"];
-const LO_AU=["Không lo lắng","Sợ đau sau mổ","Sợ biến chứng hoặc tử vong","Lo ngại kết quả phẫu thuật","Lo về chi phí điều trị","Lo về mất khả năng lao động","Lý do gia đình – xã hội khác"];
-const RLGN=["Đau vùng tổn thương","Tiếng ồn bệnh viện","Lo lắng về phẫu thuật","Môi trường nằm viện không quen","Triệu chứng khác (tiểu đêm, khó thở...)"];
-function esc(s){return String(s||"").replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]))}
-function renderQuestions(){
-  document.getElementById('hads-wrap').innerHTML=HADS_DATA.map(item=>`<div class="q-card"><div class="q-head"><div class="q-num">${item.id}</div><div class="q-text">${esc(item.q)}</div></div><div class="options">${item.opts.map((opt,idx)=>`<label class="opt"><input type="radio" name="hads_${item.id}" value="${idx}"><span>${esc(opt)}</span></label>`).join('')}</div></div>`).join('');
-  document.getElementById('psqi5-wrap').innerHTML=PSQI5_ITEMS.map((item,idx)=>`<div class="q-card"><div class="q-head"><div class="q-num">5${String.fromCharCode(98+idx)}</div><div class="q-text">${esc(item)}</div></div><div class="field"><select id="psqi_5_${idx}" required><option value="">Chọn...</option><option value="0">Không lần nào</option><option value="1">Dưới 1 lần/tuần</option><option value="2">1–2 lần/tuần</option><option value="3">Từ 3 lần/tuần trở lên</option></select></div>${idx===8?'<div class="field" style="margin-top:10px"><label>Mô tả lý do khác</label><textarea id="psqi5j_text" placeholder="Nếu có, vui lòng mô tả..."></textarea></div>':''}</div>`).join('');
-  document.getElementById('ais-wrap').innerHTML=AIS5_ITEMS.map(item=>`<div class="q-card"><div class="q-head"><div class="q-num">${item.id}</div><div class="q-text"><strong>${esc(item.label)}</strong><div style="font-size:12px;color:#64748b;margin-top:6px">${esc(item.desc)}</div></div></div><div class="options">${AIS_OPTS.map((opt,idx)=>`<label class="opt"><input type="radio" name="ais_${item.id}" value="${idx}"><span>${esc(opt)}</span></label>`).join('')}</div></div>`).join('');
-  document.getElementById('loau-wrap').innerHTML=LO_AU.map((item,idx)=>`<label><input type="checkbox" name="loau" value="${esc(item)}" data-nolo="${idx===0?'1':'0'}"> <span>${esc(item)}</span></label>`).join('');
-  document.getElementById('rlgn-wrap').innerHTML=RLGN.map(item=>`<label><input type="checkbox" name="rlgn" value="${esc(item)}"> <span>${esc(item)}</span></label>`).join('');
-  document.querySelectorAll('input[name="loau"]').forEach(cb=>cb.addEventListener('change',()=>{const all=[...document.querySelectorAll('input[name="loau"]')];const noLo=all.find(x=>x.dataset.nolo==='1');if(cb.dataset.nolo==='1'&&cb.checked){all.forEach(x=>{if(x!==cb)x.checked=false;});}else if(cb.checked&&noLo){noLo.checked=false;}}));
-}
-function getRadioValue(name){const el=document.querySelector(`input[name="${name}"]:checked`);return el?Number(el.value):null}
-function getMulti(name){return [...document.querySelectorAll(`input[name="${name}"]:checked`)].map(el=>el.value)}
-function validateForm(){for(let i=1;i<=14;i++) if(getRadioValue(`hads_${i}`)===null) return 'Vui lòng trả lời đủ 14 câu HADS.'; if(!document.getElementById('psqi1').value||!document.getElementById('psqi3').value) return 'Vui lòng điền giờ đi ngủ và giờ thức dậy.'; for(const id of ['psqi2','psqi4','psqi5a','psqi6','psqi7','psqi8','psqi9']) if(document.getElementById(id).value==='') return 'Vui lòng điền đầy đủ các mục PSQI.'; for(let i=0;i<9;i++) if(document.getElementById(`psqi_5_${i}`).value==='') return 'Vui lòng trả lời đủ phần PSQI-5.'; for(let i=1;i<=5;i++) if(getRadioValue(`ais_${i}`)===null) return 'Vui lòng trả lời đủ 5 câu AIS.'; return ''}
-function buildPayload(){const payload={action:'patient-submit',patient_token:PATIENT_TOKEN,psqi1:document.getElementById('psqi1').value,psqi2:Number(document.getElementById('psqi2').value),psqi3:document.getElementById('psqi3').value,psqi4:Number(document.getElementById('psqi4').value),psqi5a:Number(document.getElementById('psqi5a').value),psqi6:Number(document.getElementById('psqi6').value),psqi7:Number(document.getElementById('psqi7').value),psqi8:Number(document.getElementById('psqi8').value),psqi9:Number(document.getElementById('psqi9').value),psqi5j_text:(document.getElementById('psqi5j_text')?.value||'').trim(),nguyen_nhan_lo_au:JSON.stringify(getMulti('loau')),nguyen_nhan_lo_au_khac:document.getElementById('loau-khac').value.trim(),nguyen_nhan_rlgn:JSON.stringify(getMulti('rlgn')),nguyen_nhan_rlgn_khac:document.getElementById('rlgn-khac').value.trim()};for(let i=1;i<=14;i++)payload[`hads_${i}`]=getRadioValue(`hads_${i}`);for(let i=1;i<=5;i++)payload[`ais_${i}`]=getRadioValue(`ais_${i}`);for(let i=0;i<9;i++)payload[`psqi_5_${i}`]=Number(document.getElementById(`psqi_5_${i}`).value);return payload}
-async function submitForm(){const errBox=document.getElementById('submit-err');const okBox=document.getElementById('submit-ok');errBox.classList.add('hidden');okBox.classList.add('hidden');const validation=validateForm();if(validation){errBox.textContent=validation;errBox.classList.remove('hidden');window.scrollTo({top:errBox.offsetTop-20,behavior:'smooth'});return;}const btn=document.getElementById('submit-btn');btn.disabled=true;btn.textContent='Đang gửi...';try{const res=await fetch(API_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(buildPayload())});const data=await res.json();if(data&&data.success===false)throw new Error(data.error||'Không thể gửi phiếu.');okBox.innerHTML='<strong>Đã gửi phiếu thành công.</strong><br>Xin cảm ơn bạn đã hoàn thành khảo sát. Bạn có thể đóng trang này.';okBox.classList.remove('hidden');document.getElementById('patient-form').classList.add('hidden');document.querySelector('.bar').classList.add('hidden');window.scrollTo({top:0,behavior:'smooth'});}catch(err){errBox.textContent=err&&err.message?err.message:'Không thể gửi phiếu. Vui lòng thử lại.';errBox.classList.remove('hidden');window.scrollTo({top:errBox.offsetTop-20,behavior:'smooth'});}finally{btn.disabled=false;btn.textContent='Gửi phiếu';}}
-renderQuestions();document.getElementById('submit-btn').addEventListener('click',submitForm);
-</script>
-<? } ?>
+      <!-- Tab: Tổng quan nghiên cứu -->
+      <div id="dash-panel-overall" style="display:none;">
+        <div id="tonghop-grid"><div class="tonghop-loading">Đang tải...</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FORM -->
+  <div id="screen-new" class="screen">
+    <div class="container">
+      <div id="form-alert" class="alert hidden"></div>
+      <div class="step-bar">
+        <div class="step-item active" id="tab1">Bước 1 — Nhập viện</div>
+        <div class="step-item" id="tab2">Bước 2 — Trước mổ</div>
+        <div class="step-item" id="tab3">Bước 3 — Sau mổ</div>
+      </div>
+      <div id="step1"></div>
+      <div id="step2" style="display:none"></div>
+      <div id="step3" style="display:none"></div>
+      <div class="form-footer">
+        <div style="font-size:11px;color:var(--text-muted)" id="footer-info">Bước 1/3</div>
+        <div class="btn-group">
+          <button class="btn btn-sm" id="btn-prev" onclick="prevStep()" style="display:none">← Trước</button>
+          <button class="btn btn-sm btn-primary" id="btn-next" onclick="nextStep()">Lưu & Tiếp theo →</button>
+          <button class="btn btn-sm btn-primary" id="btn-finish" onclick="finishForm()" style="display:none">Lưu & Hoàn thành</button>
+          <button class="btn btn-sm btn-primary" id="btn-update" onclick="saveAllStepsUpdate()" style="display:none">💾 Lưu cập nhật cả 3 bước</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!--
+    auth-config.js PHẢI load TRƯỚC main.js.
+    File này chứa tài khoản và API URL — KHÔNG đưa lên Git/chia sẻ công khai.
+  -->
+  <script src="./assets/js/auth-config.js"></script>
+  <script src="./assets/js/questions-config.js"></script>
+  <script src="./assets/js/main.js"></script>
 </body>
-</html>
+</html><!-- inline style patch: muc tieu -->
+<style>
+.th-muctieu-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 10px 14px;
+  background: var(--surface-raised, #f7fafc);
+  border-radius: 8px;
+  border: 1px dashed var(--border, #e2e8f0);
+  font-size: 13px;
+}
+.th-muctieu-label { font-weight: 600; color: var(--text, #2d3748); }
+.th-muctieu-input {
+  width: 80px;
+  padding: 4px 8px;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--primary, #1a7a6e);
+  text-align: center;
+  background: var(--surface, #fff);
+}
+.th-muctieu-hint { color: var(--text-muted, #718096); }
+.th-muctieu-saved { color: var(--green, #27ae60); font-size: 12px; font-weight: 600; }
+</style>

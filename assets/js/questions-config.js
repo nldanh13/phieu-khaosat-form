@@ -131,7 +131,6 @@ window.AIS5_ITEMS = [
 
 // ── Nguyên nhân lo âu trước phẫu thuật (multi-select) ────────
 window.NGUYEN_NHAN_LO_AU = [
-  "Không lo lắng",
   "Sợ đau sau mổ",
   "Sợ biến chứng hoặc tử vong",
   "Lo ngại kết quả phẫu thuật",

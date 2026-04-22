@@ -1,150 +1,270 @@
-window.HADS_DATA = [
-  {
-    id: 1, t: "A",
-    q: "Tôi cảm thấy căng thẳng hoặc bồn chồn:",
-    opts: ["Không bao giờ (0)", "Đôi khi (1)", "Thường xuyên (2)", "Hầu hết lúc (3)"]
-  },
-  {
-    id: 2, t: "D",
-    q: "Tôi vẫn thưởng thức được những điều từng làm tôi thích thú:",
-    opts: ["Vẫn như trước (0)", "Chỉ một ít (1)", "Không nhiều như trước (2)", "Chắc chắn không (3)"]
-  },
-  {
-    id: 3, t: "A",
-    q: "Tôi có cảm giác sợ hãi như thể có điều gì xấu sắp xảy ra:",
-    opts: ["Hoàn toàn không (0)", "Một chút nhưng không lo (1)", "Đúng vậy và khá lo (2)", "Chắc chắn và rất nhiều (3)"]
-  },
-  {
-    id: 4, t: "D",
-    q: "Tôi có thể cười và nhìn thấy mặt vui của sự việc:",
-    opts: ["Thường xuyên như trước (0)", "Thỉnh thoảng (1)", "Không nhiều lắm (2)", "Hoàn toàn không (3)"]
-  },
-  {
-    id: 5, t: "A",
-    q: "Đầu óc tôi căng thẳng với những mối lo:",
-    opts: ["Thỉnh thoảng (0)", "Thỉnh thoảng nhưng không thường (1)", "Thường xuyên (2)", "Hầu hết lúc (3)"]
-  },
-  {
-    id: 6, t: "D",
-    q: "Tôi cảm thấy vui vẻ:",
-    opts: ["Thường xuyên (0)", "Đôi khi (1)", "Không thường xuyên (2)", "Hoàn toàn không (3)"]
-  },
-  {
-    id: 7, t: "A",
-    q: "Tôi có thể ngồi thư giãn và thoải mái:",
-    opts: ["Chắc chắn (0)", "Thường thì có (1)", "Không thường xuyên (2)", "Hoàn toàn không thể (3)"]
-  },
-  {
-    id: 8, t: "D",
-    q: "Tôi cảm thấy như mình đang chậm lại:",
-    opts: ["Hoàn toàn không (0)", "Đôi khi (1)", "Thường xuyên (2)", "Hầu hết lúc (3)"]
-  },
-  {
-    id: 9, t: "A",
-    q: "Tôi có cảm giác lo lắng / sợ hãi:",
-    opts: ["Hoàn toàn không (0)", "Đôi khi (1)", "Thường xuyên (2)", "Rất thường xuyên (3)"]
-  },
-  {
-    id: 10, t: "D",
-    q: "Tôi không còn quan tâm đến bề ngoài của mình:",
-    opts: ["Vẫn như trước (0)", "Ít quan tâm hơn (1)", "Không để tâm nhiều (2)", "Hoàn toàn không (3)"]
-  },
-  {
-    id: 11, t: "A",
-    q: "Tôi cảm thấy bồn chồn như thể phải đứng dậy và vận động:",
-    opts: ["Hoàn toàn không (0)", "Không nhiều (1)", "Khá nhiều (2)", "Thực sự rất nhiều (3)"]
-  },
-  {
-    id: 12, t: "D",
-    q: "Tôi mong chờ những điều thú vị sắp xảy ra:",
-    opts: ["Như tôi thường làm (0)", "Ít hơn trước (1)", "Chắc chắn ít hơn (2)", "Hầu như không bao giờ (3)"]
-  },
-  {
-    id: 13, t: "A",
-    q: "Tôi đột nhiên có cảm giác hoảng loạn:",
-    opts: ["Hoàn toàn không (0)", "Không thường xuyên (1)", "Thường xuyên (2)", "Rất thường xuyên (3)"]
-  },
-  {
-    id: 14, t: "D",
-    q: "Tôi tìm thấy niềm vui trong cuốn sách hay hoặc chương trình TV:",
-    opts: ["Thường xuyên (0)", "Đôi khi (1)", "Không thường xuyên (2)", "Hiếm khi (3)"]
-  },
-];
+══════════════════════════════════════════════════════════════
+ DANH SÁCH 40 CÂU HỎI GOOGLE FORM
+ Copy tiêu đề NGUYÊN VẸN kể cả [fieldname] và số trong ngoặc
+══════════════════════════════════════════════════════════════
 
-// ── PSQI câu 5b–5j — vấn đề giấc ngủ ───────────────────────
-// Mỗi câu dùng thang: Không (0) / <1/tuần (1) / 1–2/tuần (2) / ≥3/tuần (3)
-window.PSQI5_ITEMS = [
-  "5b. Thức giấc giữa đêm hoặc thức dậy quá sớm",
-  "5c. Phải dậy đi vệ sinh",
-  "5d. Không thở thoải mái",
-  "5e. Ho hoặc ngáy to",
-  "5f. Cảm thấy quá lạnh",
-  "5g. Cảm thấy quá nóng",
-  "5h. Có ác mộng",
-  "5i. Bị đau nhức",
-  "5j. Lý do khác",
-];
+── CÂU 1 — MÃ PHIẾU ─────────────────────────────────────────
+Tiêu đề : Mã phiếu
+Loại    : Short answer (Văn bản ngắn)
+Bắt buộc: Có
+Ghi chú : Sẽ được điền sẵn tự động qua link — bệnh nhân không sửa
 
-// ── Hài lòng sau phẫu thuật — Likert 1–5 ───────────────────
-window.HL_ITEMS = [
-  "Kiểm soát đau sau phẫu thuật",
-  "Chăm sóc của điều dưỡng",
-  "Thông tin được cung cấp trước và sau mổ",
-  "Khả năng vận động sau mổ",
-  "Kết quả phẫu thuật tổng thể",
-];
+── 14 CÂU HADS — Loại: Multiple choice (Trắc nghiệm) ────────
 
-// ── AIS-5 (Athens Insomnia Scale — 5 items) ──────────────────
-// Thang điểm 0–3 mỗi câu; tổng 0–15; >4 = rối loạn giấc ngủ
-window.AIS5_ITEMS = [
-  {
-    id: 1,
-    label: "Khởi phát giấc ngủ",
-    desc: "Thời gian để ngủ sau khi tắt đèn",
-    opts: ["Không vấn đề (0)", "Chậm nhẹ (1)", "Chậm rõ (2)", "Rất chậm / không ngủ (3)"]
-  },
-  {
-    id: 2,
-    label: "Thức giấc giữa đêm",
-    desc: "Tỉnh giấc nhiều lần trong đêm",
-    opts: ["Không vấn đề (0)", "Nhẹ (1)", "Đáng kể (2)", "Nghiêm trọng / không ngủ (3)"]
-  },
-  {
-    id: 3,
-    label: "Thức dậy sớm",
-    desc: "Dậy sớm hơn mong muốn",
-    opts: ["Không (0)", "Hơi sớm (1)", "Sớm rõ (2)", "Rất sớm / không ngủ (3)"]
-  },
-  {
-    id: 4,
-    label: "Tổng thời gian ngủ",
-    desc: "Cảm nhận về thời lượng ngủ",
-    opts: ["Đủ (0)", "Hơi thiếu (1)", "Thiếu rõ (2)", "Rất thiếu / không ngủ (3)"]
-  },
-  {
-    id: 5,
-    label: "Chất lượng giấc ngủ",
-    desc: "Độ sâu và sự thoải mái của giấc ngủ",
-    opts: ["Tốt (0)", "Hơi kém (1)", "Kém (2)", "Rất kém / không ngủ (3)"]
-  },
-];
+Câu 2
+Tiêu đề : [hads_1] Tôi cảm thấy căng thẳng hoặc bồn chồn:
+Lựa chọn: Không bao giờ (0)
+          Đôi khi (1)
+          Thường xuyên (2)
+          Hầu hết lúc (3)
 
-// ── Nguyên nhân lo âu trước phẫu thuật (multi-select) ────────
-window.NGUYEN_NHAN_LO_AU = [
-  "Không lo lắng",
-  "Sợ đau sau mổ",
-  "Sợ biến chứng hoặc tử vong",
-  "Lo ngại kết quả phẫu thuật",
-  "Lo về chi phí điều trị",
-  "Lo về mất khả năng lao động",
-  "Lý do gia đình – xã hội khác",
-];
+Câu 3
+Tiêu đề : [hads_2] Tôi vẫn thưởng thức được những điều từng làm tôi thích thú:
+Lựa chọn: Vẫn như trước (0)
+          Chỉ một ít (1)
+          Không nhiều như trước (2)
+          Chắc chắn không (3)
 
-// ── Nguyên nhân rối loạn giấc ngủ (multi-select) ─────────────
-window.NGUYEN_NHAN_RLGN = [
-  "Đau vùng tổn thương",
-  "Tiếng ồn bệnh viện",
-  "Lo lắng về phẫu thuật",
-  "Môi trường nằm viện không quen",
-  "Triệu chứng khác (tiểu đêm, khó thở...)",
-];
+Câu 4
+Tiêu đề : [hads_3] Tôi có cảm giác sợ hãi như thể có điều gì xấu sắp xảy ra:
+Lựa chọn: Hoàn toàn không (0)
+          Một chút nhưng không lo (1)
+          Đúng vậy và khá lo (2)
+          Chắc chắn và rất nhiều (3)
+
+Câu 5
+Tiêu đề : [hads_4] Tôi có thể cười và nhìn thấy mặt vui của sự việc:
+Lựa chọn: Thường xuyên như trước (0)
+          Thỉnh thoảng (1)
+          Không nhiều lắm (2)
+          Hoàn toàn không (3)
+
+Câu 6
+Tiêu đề : [hads_5] Đầu óc tôi căng thẳng với những mối lo:
+Lựa chọn: Thỉnh thoảng (0)
+          Thỉnh thoảng nhưng không thường (1)
+          Thường xuyên (2)
+          Hầu hết lúc (3)
+
+Câu 7
+Tiêu đề : [hads_6] Tôi cảm thấy vui vẻ:
+Lựa chọn: Thường xuyên (0)
+          Đôi khi (1)
+          Không thường xuyên (2)
+          Hoàn toàn không (3)
+
+Câu 8
+Tiêu đề : [hads_7] Tôi có thể ngồi thư giãn và thoải mái:
+Lựa chọn: Chắc chắn (0)
+          Thường thì có (1)
+          Không thường xuyên (2)
+          Hoàn toàn không thể (3)
+
+Câu 9
+Tiêu đề : [hads_8] Tôi cảm thấy như mình đang chậm lại:
+Lựa chọn: Hoàn toàn không (0)
+          Đôi khi (1)
+          Thường xuyên (2)
+          Hầu hết lúc (3)
+
+Câu 10
+Tiêu đề : [hads_9] Tôi có cảm giác lo lắng / sợ hãi:
+Lựa chọn: Hoàn toàn không (0)
+          Đôi khi (1)
+          Thường xuyên (2)
+          Rất thường xuyên (3)
+
+Câu 11
+Tiêu đề : [hads_10] Tôi không còn quan tâm đến bề ngoài của mình:
+Lựa chọn: Vẫn như trước (0)
+          Ít quan tâm hơn (1)
+          Không để tâm nhiều (2)
+          Hoàn toàn không (3)
+
+Câu 12
+Tiêu đề : [hads_11] Tôi cảm thấy bồn chồn như thể phải đứng dậy và vận động:
+Lựa chọn: Hoàn toàn không (0)
+          Không nhiều (1)
+          Khá nhiều (2)
+          Thực sự rất nhiều (3)
+
+Câu 13
+Tiêu đề : [hads_12] Tôi mong chờ những điều thú vị sắp xảy ra:
+Lựa chọn: Như tôi thường làm (0)
+          Ít hơn trước (1)
+          Chắc chắn ít hơn (2)
+          Hầu như không bao giờ (3)
+
+Câu 14
+Tiêu đề : [hads_13] Tôi đột nhiên có cảm giác hoảng loạn:
+Lựa chọn: Hoàn toàn không (0)
+          Không thường xuyên (1)
+          Thường xuyên (2)
+          Rất thường xuyên (3)
+
+Câu 15
+Tiêu đề : [hads_14] Tôi tìm thấy niềm vui trong cuốn sách hay hoặc chương trình TV:
+Lựa chọn: Thường xuyên (0)
+          Đôi khi (1)
+          Không thường xuyên (2)
+          Hiếm khi (3)
+
+── PSQI — GIẤC NGỦ ──────────────────────────────────────────
+
+Câu 16
+Tiêu đề : [psqi1] Giờ đi ngủ thường của bạn? (ví dụ: 22:30)
+Loại    : Short answer
+
+Câu 17
+Tiêu đề : [psqi2] Mất bao nhiêu phút để ngủ được? (nhập số)
+Loại    : Short answer
+
+Câu 18
+Tiêu đề : [psqi3] Giờ thức dậy thường của bạn? (ví dụ: 06:00)
+Loại    : Short answer
+
+Câu 19
+Tiêu đề : [psqi4] Thực sự ngủ được bao nhiêu giờ mỗi đêm? (ví dụ: 6.5)
+Loại    : Short answer
+
+Câu 20
+Tiêu đề : [psqi5a] Trong tháng qua, mất hơn 30 phút để ngủ bao nhiêu lần/tuần?
+Loại    : Multiple choice
+Lựa chọn: Không lần nào (0)
+          Dưới 1 lần/tuần (1)
+          1 đến 2 lần/tuần (2)
+          Từ 3 lần/tuần trở lên (3)
+
+Câu 21
+Tiêu đề : [psqi_5_0] Thức giấc giữa đêm hoặc thức dậy quá sớm
+Loại    : Multiple choice
+Lựa chọn: Không (0) | Dưới 1 lần/tuần (1) | 1 đến 2 lần/tuần (2) | Từ 3 lần/tuần trở lên (3)
+
+Câu 22
+Tiêu đề : [psqi_5_1] Phải dậy đi vệ sinh
+Loại    : Multiple choice
+Lựa chọn: Không (0) | Dưới 1 lần/tuần (1) | 1 đến 2 lần/tuần (2) | Từ 3 lần/tuần trở lên (3)
+
+Câu 23
+Tiêu đề : [psqi_5_2] Không thở thoải mái
+Loại    : Multiple choice
+Lựa chọn: Không (0) | Dưới 1 lần/tuần (1) | 1 đến 2 lần/tuần (2) | Từ 3 lần/tuần trở lên (3)
+
+Câu 24
+Tiêu đề : [psqi_5_3] Ho hoặc ngáy to
+Loại    : Multiple choice
+Lựa chọn: Không (0) | Dưới 1 lần/tuần (1) | 1 đến 2 lần/tuần (2) | Từ 3 lần/tuần trở lên (3)
+
+Câu 25
+Tiêu đề : [psqi_5_4] Cảm thấy quá lạnh
+Loại    : Multiple choice
+Lựa chọn: Không (0) | Dưới 1 lần/tuần (1) | 1 đến 2 lần/tuần (2) | Từ 3 lần/tuần trở lên (3)
+
+Câu 26
+Tiêu đề : [psqi_5_5] Cảm thấy quá nóng
+Loại    : Multiple choice
+Lựa chọn: Không (0) | Dưới 1 lần/tuần (1) | 1 đến 2 lần/tuần (2) | Từ 3 lần/tuần trở lên (3)
+
+Câu 27
+Tiêu đề : [psqi_5_6] Có ác mộng
+Loại    : Multiple choice
+Lựa chọn: Không (0) | Dưới 1 lần/tuần (1) | 1 đến 2 lần/tuần (2) | Từ 3 lần/tuần trở lên (3)
+
+Câu 28
+Tiêu đề : [psqi_5_7] Bị đau nhức
+Loại    : Multiple choice
+Lựa chọn: Không (0) | Dưới 1 lần/tuần (1) | 1 đến 2 lần/tuần (2) | Từ 3 lần/tuần trở lên (3)
+
+Câu 29
+Tiêu đề : [psqi_5_8] Lý do khác ảnh hưởng giấc ngủ
+Loại    : Multiple choice
+Lựa chọn: Không (0) | Dưới 1 lần/tuần (1) | 1 đến 2 lần/tuần (2) | Từ 3 lần/tuần trở lên (3)
+
+Câu 30
+Tiêu đề : [psqi6] Chất lượng giấc ngủ tổng thể trong tháng qua?
+Loại    : Multiple choice
+Lựa chọn: Rất tốt (0)
+          Tương đối tốt (1)
+          Tương đối kém (2)
+          Rất kém (3)
+
+Câu 31
+Tiêu đề : [psqi7] Dùng thuốc ngủ bao nhiêu lần/tuần trong tháng qua?
+Loại    : Multiple choice
+Lựa chọn: Không (0) | Dưới 1 lần/tuần (1) | 1 đến 2 lần/tuần (2) | Từ 3 lần/tuần trở lên (3)
+
+Câu 32
+Tiêu đề : [psqi8] Khó giữ tỉnh táo khi lái xe, ăn cơm hoặc giao tiếp?
+Loại    : Multiple choice
+Lựa chọn: Không (0) | Dưới 1 lần/tuần (1) | 1 đến 2 lần/tuần (2) | Từ 3 lần/tuần trở lên (3)
+
+Câu 33
+Tiêu đề : [psqi9] Vấn đề giấc ngủ ảnh hưởng sinh hoạt hàng ngày như thế nào?
+Loại    : Multiple choice
+Lựa chọn: Không ảnh hưởng (0)
+          Ảnh hưởng nhẹ (1)
+          Ảnh hưởng vừa (2)
+          Ảnh hưởng nhiều (3)
+
+── AIS-5 — ATHENS INSOMNIA SCALE ────────────────────────────
+
+Câu 34
+Tiêu đề : [ais_1] Khởi phát giấc ngủ — Thời gian để ngủ sau khi tắt đèn
+Loại    : Multiple choice
+Lựa chọn: Không vấn đề (0)
+          Chậm nhẹ (1)
+          Chậm rõ (2)
+          Rất chậm / không ngủ được (3)
+
+Câu 35
+Tiêu đề : [ais_2] Thức giấc giữa đêm — Tỉnh giấc nhiều lần trong đêm
+Loại    : Multiple choice
+Lựa chọn: Không vấn đề (0)
+          Nhẹ (1)
+          Đáng kể (2)
+          Nghiêm trọng / không ngủ được (3)
+
+Câu 36
+Tiêu đề : [ais_3] Thức dậy sớm — Dậy sớm hơn mong muốn
+Loại    : Multiple choice
+Lựa chọn: Không (0)
+          Hơi sớm (1)
+          Sớm rõ (2)
+          Rất sớm / không ngủ được (3)
+
+Câu 37
+Tiêu đề : [ais_4] Tổng thời gian ngủ — Cảm nhận về thời lượng ngủ
+Loại    : Multiple choice
+Lựa chọn: Đủ (0)
+          Hơi thiếu (1)
+          Thiếu rõ (2)
+          Rất thiếu / không ngủ được (3)
+
+Câu 38
+Tiêu đề : [ais_5] Chất lượng giấc ngủ — Độ sâu và sự thoải mái
+Loại    : Multiple choice
+Lựa chọn: Tốt (0)
+          Hơi kém (1)
+          Kém (2)
+          Rất kém / không ngủ được (3)
+
+── NGUYÊN NHÂN — Loại: Checkboxes (Hộp kiểm — chọn nhiều) ──
+
+Câu 39
+Tiêu đề : [nguyen_nhan_lo_au] Nguyên nhân lo âu trước phẫu thuật (có thể chọn nhiều)
+Lựa chọn: Sợ đau sau mổ
+          Sợ biến chứng hoặc tử vong
+          Lo ngại kết quả phẫu thuật
+          Lo về chi phí điều trị
+          Lo về mất khả năng lao động
+          Lý do gia đình – xã hội khác
+
+Câu 40
+Tiêu đề : [nguyen_nhan_rlgn] Nguyên nhân rối loạn giấc ngủ (có thể chọn nhiều)
+Lựa chọn: Đau vùng tổn thương
+          Tiếng ồn bệnh viện
+          Lo lắng về phẫu thuật
+          Môi trường nằm viện không quen
+          Triệu chứng khác (tiểu đêm, khó thở...)
+
+══════════════════════════════════════════════════════════════
