@@ -2127,6 +2127,132 @@ function applyThuocNgay(ngay, rawValue) {
   updateAddThuocBtn(ngay);
 }
 
+
+// ── Google Form Integration (Bước 2) ────────────────────────
+const FORM_BASE_URL       = window.APP_FORM?.baseUrl        || "";
+const FORM_MA_PHIEU_ENTRY = window.APP_FORM?.maPhieuEntryId || "";
+
+function getFormLink(maPhieu) {
+  if (!FORM_BASE_URL || !FORM_MA_PHIEU_ENTRY) return "";
+  return `${FORM_BASE_URL}?usp=pp_url&${FORM_MA_PHIEU_ENTRY}=${encodeURIComponent(maPhieu)}`;
+}
+
+function showFormLinkModal(maPhieu) {
+  const link = getFormLink(maPhieu);
+  if (!FORM_BASE_URL) {
+    showAlert("form-alert", "Chưa cấu hình APP_FORM trong auth-config.js.", "error");
+    return;
+  }
+  document.getElementById("form-link-modal")?.remove();
+  const modal = document.createElement("div");
+  modal.id = "form-link-modal";
+  modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;";
+  modal.innerHTML = `
+    <div style="background:var(--surface);border-radius:16px;padding:24px 22px;max-width:420px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.25);">
+      <div style="font-size:16px;font-weight:700;color:var(--primary);margin-bottom:4px;">📋 Link khảo sát cho bệnh nhân</div>
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px;">
+        Mã phiếu đã điền sẵn: <strong style="color:var(--primary);font-family:'DM Mono',monospace;">${escapeHtml(maPhieu)}</strong>
+      </div>
+      <div id="form-qr-wrap" style="display:flex;justify-content:center;align-items:center;margin-bottom:16px;padding:16px;background:#fff;border-radius:10px;border:1px solid var(--border);min-height:220px;">
+        <div id="form-qr-container"></div>
+        <div id="form-qr-loading" style="font-size:12px;color:var(--text-muted);">Đang tạo QR...</div>
+      </div>
+      <div style="background:var(--slate-50);border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:11px;font-family:'DM Mono',monospace;word-break:break-all;color:var(--slate-700);border:1px solid var(--border);max-height:72px;overflow-y:auto;" id="form-link-display">${escapeHtml(link)}</div>
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:14px;background:var(--teal-50);border-radius:8px;padding:10px 12px;border-left:3px solid var(--teal-400);line-height:1.6;">
+        📱 <strong>Quét QR</strong> bằng camera hoặc <strong>sao chép link</strong> gửi qua Zalo/nhắn tin. Mã phiếu đã điền sẵn.
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-primary btn-sm" style="flex:1;min-width:110px;" onclick="copyFormLink('${escapeHtml(link)}',this)">📋 Sao chép link</button>
+        <button class="btn btn-sm" style="flex:1;" onclick="window.open('${escapeHtml(link)}','_blank')">🔗 Mở thử</button>
+        <button class="btn btn-sm" onclick="document.getElementById('form-link-modal').remove()">Đóng</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener("click", e => { if (e.target === modal) modal.remove(); });
+  _loadQRCode(() => {
+    const qrEl = document.getElementById("form-qr-container");
+    const loading = document.getElementById("form-qr-loading");
+    if (loading) loading.style.display = "none";
+    if (qrEl && typeof QRCode !== "undefined") {
+      new QRCode(qrEl, { text: link, width: 192, height: 192, colorDark: "#0D9488", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.M });
+    }
+  });
+}
+
+function _loadQRCode(callback) {
+  if (typeof QRCode !== "undefined") { callback(); return; }
+  const s = document.createElement("script");
+  s.src = "https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js";
+  s.onload = callback;
+  s.onerror = () => { const el = document.getElementById("form-qr-loading"); if (el) el.textContent = "Không tải được QR. Dùng link bên dưới."; };
+  document.head.appendChild(s);
+}
+
+function copyFormLink(link, btn) {
+  const text = link || document.getElementById("form-link-display")?.textContent?.trim();
+  if (!text) return;
+  const flash = () => {
+    if (!btn) return;
+    const orig = btn.textContent;
+    btn.textContent = "✓ Đã sao chép!";
+    btn.style.background = "var(--green-600)";
+    setTimeout(() => { btn.textContent = orig; btn.style.background = ""; }, 2000);
+  };
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(flash).catch(() => { _copyFallback(text); flash(); });
+  } else {
+    _copyFallback(text); flash();
+  }
+}
+function _copyFallback(text) {
+  const ta = document.createElement("textarea");
+  ta.value = text; ta.style.cssText = "position:fixed;opacity:0";
+  document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta);
+}
+
+async function checkStep2FromForm() {
+  if (!currentMaPhieu) return;
+  const btn = document.getElementById("btn-check-form");
+  if (btn) { btn.disabled = true; btn.textContent = "⏳ Đang kiểm tra..."; }
+  try {
+    const res = await apiGet("check-form-step2", { ma: currentMaPhieu });
+    if (res?.submitted) {
+      applyFormData(res.data || {});
+      calcHADS(); calcPSQI(); calcAIS5(); restoreSelectionHighlights();
+      _setStep2FormBadge("done", res.submitted_at);
+      showAlert("form-alert", "✓ Đã tải kết quả Google Form. Kiểm tra lại rồi nhấn Lưu.", "success");
+    } else {
+      _setStep2FormBadge("waiting");
+      showAlert("form-alert", "Bệnh nhân chưa điền form. Hãy chia sẻ link/QR rồi thử lại sau.", "info");
+    }
+  } catch (e) {
+    showAlert("form-alert", "Lỗi kiểm tra: " + e.message, "error");
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "🔄 Kiểm tra kết quả"; }
+  }
+}
+
+function _setStep2FormBadge(status, submittedAt = "") {
+  const el = document.getElementById("step2-form-badge");
+  if (!el) return;
+  if (status === "done") {
+    el.innerHTML = `<span class="badge badge-green">✅ Bệnh nhân đã điền</span>` +
+      (submittedAt ? `<span style="font-size:11px;color:var(--text-muted);margin-left:8px;">${formatWhen(submittedAt)}</span>` : "");
+  } else if (status === "waiting") {
+    el.innerHTML = `<span class="badge badge-amber">⏳ Chờ bệnh nhân điền</span>`;
+  } else {
+    el.innerHTML = `<span class="badge badge-gray">Chưa gửi link</span>`;
+  }
+}
+
+async function autoCheckStep2Status() {
+  if (!currentMaPhieu || !FORM_BASE_URL) return;
+  try {
+    const res = await apiGet("check-form-step2", { ma: currentMaPhieu });
+    _setStep2FormBadge(res?.submitted ? "done" : "waiting", res?.submitted_at);
+  } catch { /* silent */ }
+}
+
 // ── Build Steps HTML ─────────────────────────────────────────
 function buildStep1() {
   document.getElementById("step1").innerHTML = `
@@ -2211,8 +2337,7 @@ function buildStep2() {
 
   const psqi5Labels = ["Không (0)", "<1/tuần (1)", "1–2/tuần (2)", "≥3/tuần (3)"];
   const psqi5Items  = window.PSQI5_ITEMS || [];
-  const psqi5Cards  = psqi5Items
-    .map((q,i) => `
+  const psqi5Cards  = psqi5Items.map((q,i) => `
       <div class="q-card">
         <div class="q-text" style="margin-bottom:8px">${q}</div>
         <div class="opt-row">
@@ -2221,7 +2346,6 @@ function buildStep2() {
         ${i === 8 ? `<div style="margin-top:8px"><input type="text" id="f_psqi5j_text" placeholder="Mô tả lý do khác..." style="width:100%;font-size:12px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);box-sizing:border-box;"></div>` : ""}
       </div>`).join("");
 
-  // AIS-5 cards
   const ais5Items = window.AIS5_ITEMS || [];
   const aisCards  = ais5Items.map(item => `
     <div class="q-card">
@@ -2238,7 +2362,6 @@ function buildStep2() {
       </div>
     </div>`).join("");
 
-  // Nguyên nhân lo âu checkboxes
   const nnLoAuItems = window.NGUYEN_NHAN_LO_AU || [];
   const nnLoAuHtml  = nnLoAuItems.map((lbl,i) => `
     <label class="opt-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;">
@@ -2246,7 +2369,6 @@ function buildStep2() {
       <span style="font-size:13px;">${lbl}</span>
     </label>`).join("");
 
-  // Nguyên nhân RLGN checkboxes
   const nnRlgnItems = window.NGUYEN_NHAN_RLGN || [];
   const nnRlgnHtml  = nnRlgnItems.map((lbl,i) => `
     <label class="opt-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;">
@@ -2254,7 +2376,28 @@ function buildStep2() {
       <span style="font-size:13px;">${lbl}</span>
     </label>`).join("");
 
+  const formBannerHtml = FORM_BASE_URL ? `
+  <div class="card" style="border:2px solid var(--teal-200);background:var(--teal-50);">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+      <div>
+        <div style="font-size:13px;font-weight:700;color:var(--primary);margin-bottom:4px;">📱 Bước 2 — Bệnh nhân tự điền qua Google Form</div>
+        <div style="font-size:12px;color:var(--text-muted);line-height:1.5;">
+          Tạo link/QR → chia sẻ cho bệnh nhân → nhấn <strong>Kiểm tra kết quả</strong> khi bệnh nhân điền xong.
+        </div>
+        <div id="step2-form-badge" style="margin-top:8px;"><span class="badge badge-gray">Chưa gửi link</span></div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;flex-shrink:0;">
+        <button class="btn btn-primary btn-sm" onclick="showFormLinkModal('${escapeHtml(currentMaPhieu || "")}')">📋 Tạo link &amp; QR</button>
+        <button class="btn btn-sm" id="btn-check-form" onclick="checkStep2FromForm()">🔄 Kiểm tra kết quả</button>
+      </div>
+    </div>
+    <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--teal-100);font-size:11px;color:var(--text-muted);">
+      💡 Bạn vẫn có thể tự điền tay bên dưới nếu cần.
+    </div>
+  </div>` : "";
+
   document.getElementById("step2").innerHTML = `
+  ${formBannerHtml}
   <div class="card">
     <div class="card-title">B1. Thang HADS — 14 câu <span style="font-size:11px;color:var(--red)">* Bắt buộc trả lời đủ 14 câu</span></div>
     <div class="q-list">${hadsCards}</div>
@@ -2279,21 +2422,13 @@ function buildStep2() {
       <div class="form-group">
         <label>Chất lượng giấc ngủ tổng thể — PSQI-6</label>
         <select id="f_psqi6" onchange="calcPSQI()">
-          <option value="">Chọn...</option>
-          <option value="0">Rất tốt (0)</option>
-          <option value="1">Tương đối tốt (1)</option>
-          <option value="2">Tương đối kém (2)</option>
-          <option value="3">Rất kém (3)</option>
+          <option value="">Chọn...</option><option value="0">Rất tốt (0)</option><option value="1">Tương đối tốt (1)</option><option value="2">Tương đối kém (2)</option><option value="3">Rất kém (3)</option>
         </select>
       </div>
       <div class="form-group">
         <label>PSQI-5a: Mất &gt;30 phút để ngủ — số lần/tuần</label>
         <select id="f_psqi5a" onchange="calcPSQI()">
-          <option value="">Chọn...</option>
-          <option value="0">Không lần nào (0)</option>
-          <option value="1">&lt;1 lần/tuần (1)</option>
-          <option value="2">1–2 lần/tuần (2)</option>
-          <option value="3">≥3 lần/tuần (3)</option>
+          <option value="">Chọn...</option><option value="0">Không lần nào (0)</option><option value="1">&lt;1 lần/tuần (1)</option><option value="2">1–2 lần/tuần (2)</option><option value="3">≥3 lần/tuần (3)</option>
         </select>
       </div>
     </div>
@@ -2303,21 +2438,13 @@ function buildStep2() {
       <div class="form-group">
         <label>Dùng thuốc ngủ/tuần — PSQI-7</label>
         <select id="f_psqi7" onchange="calcPSQI()">
-          <option value="">Chọn...</option>
-          <option value="0">Không (0)</option>
-          <option value="1">&lt;1/tuần (1)</option>
-          <option value="2">1–2/tuần (2)</option>
-          <option value="3">≥3/tuần (3)</option>
+          <option value="">Chọn...</option><option value="0">Không (0)</option><option value="1">&lt;1/tuần (1)</option><option value="2">1–2/tuần (2)</option><option value="3">≥3/tuần (3)</option>
         </select>
       </div>
       <div class="form-group">
         <label>Khó giữ tỉnh táo ban ngày — PSQI-8</label>
         <select id="f_psqi8" onchange="calcPSQI()">
-          <option value="">Chọn...</option>
-          <option value="0">Không (0)</option>
-          <option value="1">&lt;1/tuần (1)</option>
-          <option value="2">1–2/tuần (2)</option>
-          <option value="3">≥3/tuần (3)</option>
+          <option value="">Chọn...</option><option value="0">Không (0)</option><option value="1">&lt;1/tuần (1)</option><option value="2">1–2/tuần (2)</option><option value="3">≥3/tuần (3)</option>
         </select>
       </div>
     </div>
@@ -2325,11 +2452,7 @@ function buildStep2() {
       <div class="form-group">
         <label>Ảnh hưởng sinh hoạt hàng ngày — PSQI-9</label>
         <select id="f_psqi9" onchange="calcPSQI()">
-          <option value="">Chọn...</option>
-          <option value="0">Không ảnh hưởng (0)</option>
-          <option value="1">Ảnh hưởng nhẹ (1)</option>
-          <option value="2">Ảnh hưởng vừa (2)</option>
-          <option value="3">Ảnh hưởng nhiều (3)</option>
+          <option value="">Chọn...</option><option value="0">Không ảnh hưởng (0)</option><option value="1">Ảnh hưởng nhẹ (1)</option><option value="2">Ảnh hưởng vừa (2)</option><option value="3">Ảnh hưởng nhiều (3)</option>
         </select>
       </div>
     </div>
@@ -2354,7 +2477,10 @@ function buildStep2() {
     <div class="card-title">B5. Nguyên nhân rối loạn giấc ngủ <span style="font-size:11px;color:var(--text-muted)">(có thể chọn nhiều)</span></div>
     <div class="q-list" style="display:flex;flex-direction:column;gap:8px;">${nnRlgnHtml}</div>
   </div>`;
+
+  setTimeout(() => autoCheckStep2Status(), 300);
 }
+
 
 function buildStep3() {
   const hlLabels = ["1","2","3","4","5"];
