@@ -229,7 +229,8 @@
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
           <div style="font-size:13px;font-weight:600;">Danh sách phiếu</div>
-          <div class="btn-group">
+          <div class="btn-group" style="flex-wrap:wrap;gap:8px;justify-content:flex-end;">
+            <button class="btn btn-sm" id="btn-sync-drafts" onclick="syncAllLocalDrafts()" title="Lưu toàn bộ phiếu nháp trên máy của bạn lên Google Sheets, kể cả phiếu chưa hoàn chỉnh">💾 Lưu tất cả nháp</button>
             <button class="btn btn-sm" onclick="loadDanhSach()">↻ Tải lại</button>
             <button class="btn btn-sm btn-primary" onclick="showScreen('new')">+ Phiếu mới</button>
           </div>
