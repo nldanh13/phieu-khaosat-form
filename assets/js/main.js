@@ -13,24 +13,27 @@
 
 // ── Config (đọc từ auth-config.js) ──────────────────────────
 const API_URL = window.APP_AUTH?.apiUrl || "";
-const USERS   = window.APP_AUTH?.users  || {};
-
 if (!API_URL) console.error("[Config] apiUrl chưa được thiết lập trong auth-config.js");
 
 // ── API helpers ──────────────────────────────────────────────
 function buildApiUrl(action = "", params = {}) {
   const url = new URL(API_URL);
   if (action) url.searchParams.set("action", action);
-  Object.entries(params || {}).forEach(([k, v]) => {
+  const mergedParams = { ...(params || {}) };
+  if (!mergedParams.auth_token && currentUser?.token) mergedParams.auth_token = currentUser.token;
+  Object.entries(mergedParams).forEach(([k, v]) => {
     if (v !== undefined && v !== null && v !== "") url.searchParams.set(k, v);
   });
   return url.toString();
 }
 
 async function apiGet(action = "", params = {}) {
-  const res = await fetch(buildApiUrl(action, params));
+  const res = await fetch(buildApiUrl(action, params), { cache: "no-store" });
   let data = null;
   try { data = await res.json(); } catch { throw new Error("API trả về dữ liệu không hợp lệ"); }
+  if (data && typeof data === "object" && data.success === false) {
+    throw new Error(data.error || "API trả về lỗi");
+  }
   if (!res.ok) throw new Error(data?.error || ("Lỗi " + res.status));
   return data;
 }
@@ -44,42 +47,50 @@ function trimPayload(payload) {
   return out;
 }
 
-async function apiPost(payload) {
-  // Chiến lược: thử POST text/plain trước (không trigger preflight, không bị giới hạn URL)
-  // Nếu POST bị CORS block → fallback về GET với data chunk nhỏ
-  const jsonBody = JSON.stringify(trimPayload(payload));
-  console.log("[apiPost] payload size:", jsonBody.length, "chars | buoc:", payload.buoc, "| ma:", payload.ma_phieu);
+async function apiAction(action, payload = {}, allowGetFallback = false) {
+  const cleanPayload = trimPayload({ action, ...(payload || {}) });
+  if (!cleanPayload.auth_token && currentUser?.token && action !== "login") {
+    cleanPayload.auth_token = currentUser.token;
+  }
+  const jsonBody = JSON.stringify(cleanPayload);
+  console.log(`[apiAction] ${action} payload size:`, jsonBody.length, "chars");
 
   try {
     const res = await fetch(API_URL, {
       method: "POST",
-      body:   jsonBody,
-      // KHÔNG set Content-Type header → browser gửi text/plain → không trigger preflight
+      body: jsonBody,
     });
     const text = await res.text();
-    console.log("[apiPost] POST response:", text?.slice(0, 200));
+    console.log(`[apiAction] ${action} POST response:`, text?.slice(0, 200));
     if (!text?.trim()) throw new Error("Server không trả về dữ liệu");
     const data = JSON.parse(text);
-    if (!data?.success) throw new Error(data?.error || "Server trả về lỗi");
-    console.log("[apiPost] POST success:", data);
+    if (data?.success === false) throw new Error(data.error || "Server trả về lỗi");
     return data;
   } catch (postErr) {
-    // POST thất bại (CORS hoặc lỗi khác) → fallback GET
-    console.warn("[apiPost] POST failed:", postErr.message, "— thử GET fallback");
-    const url = new URL(API_URL);
-    url.searchParams.set("action", "save");
-    url.searchParams.set("data", jsonBody);
-    const urlStr = url.toString();
-    console.log("[apiPost] GET URL length:", urlStr.length);
-    if (urlStr.length > 7500) throw new Error("Payload quá lớn cho GET (" + urlStr.length + " ký tự). Lỗi POST: " + postErr.message);
-    const res2 = await fetch(urlStr, { method: "GET" });
+    if (!allowGetFallback) throw postErr;
+    console.warn(`[apiAction] ${action} POST failed:`, postErr.message, "— thử GET fallback");
+    const fallbackParams = action === "save" ? { data: jsonBody } : { ...(payload || {}) };
+    if (!fallbackParams.auth_token && currentUser?.token && action !== "login") {
+      fallbackParams.auth_token = currentUser.token;
+    }
+    const urlStr = buildApiUrl(action, fallbackParams);
+    if (urlStr.length > 7500) throw new Error(`Payload quá lớn cho GET (${urlStr.length} ký tự). Lỗi POST: ${postErr.message}`);
+    const res2 = await fetch(urlStr, { method: "GET", cache: "no-store" });
     const text2 = await res2.text();
-    console.log("[apiPost] GET response:", text2?.slice(0, 200));
+    console.log(`[apiAction] ${action} GET response:`, text2?.slice(0, 200));
     if (!text2?.trim()) throw new Error("Server không trả về dữ liệu (GET fallback)");
     const data2 = JSON.parse(text2);
-    if (!data2?.success) throw new Error(data2?.error || "Server lỗi (GET)");
+    if (data2?.success === false) throw new Error(data2.error || "Server lỗi (GET)");
     return data2;
   }
+}
+
+async function apiPost(payload) {
+  return apiAction("save", payload, true);
+}
+
+async function apiLogin(username, password) {
+  return apiAction("login", { username, password }, true);
 }
 
 // ── State ────────────────────────────────────────────────────
@@ -111,22 +122,58 @@ function getMucTieu()    { return parseInt(localStorage.getItem(MUC_TIEU_KEY) ||
 function setMucTieu(n)   { localStorage.setItem(MUC_TIEU_KEY, String(n)); }
 
 // ── Auth ─────────────────────────────────────────────────────
-const SESSION_KEY = "phieu_session_v1";
+const SESSION_KEY = "phieu_session_v2";
 
 function saveSession(user) {
-  localStorage.setItem(SESSION_KEY, JSON.stringify({ username: user.username, ts: Date.now() }));
+  const payload = {
+    token: user.token,
+    expires_at: user.expires_at || "",
+    user: {
+      username: user.username || "",
+      name: user.name || user.username || "",
+      role: user.role || "investigator",
+    },
+    ts: Date.now(),
+  };
+  localStorage.setItem(SESSION_KEY, JSON.stringify(payload));
 }
 
 function loadSession() {
   try {
     const s = JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
-    if (!s?.username || !USERS[s.username]) return null;
-    return { username: s.username, ...USERS[s.username] };
+    if (!s?.token || !s?.user?.username) return null;
+    return { ...s.user, token: s.token, expires_at: s.expires_at || "" };
   } catch { return null; }
 }
 
 function clearSession() {
   localStorage.removeItem(SESSION_KEY);
+}
+
+function isAdminUser(user = currentUser) {
+  return String(user?.role || "").toLowerCase() === "admin";
+}
+
+function getFriendlyErrorMessage(err) {
+  const raw = String(err?.message || err || "");
+  return raw.startsWith("AUTH:") ? raw.replace(/^AUTH:\s*/, "") : raw;
+}
+
+function isAuthError(err) {
+  return String(err?.message || err || "").startsWith("AUTH:");
+}
+
+function handleAuthError(err, alertId) {
+  if (!isAuthError(err)) return false;
+  const msg = getFriendlyErrorMessage(err) || "Phiên đăng nhập không hợp lệ. Vui lòng đăng nhập lại.";
+  doLogout(true);
+  const loginAlert = document.getElementById("login-alert");
+  if (loginAlert) {
+    loginAlert.textContent = msg;
+    loginAlert.classList.remove("hidden");
+  }
+  if (alertId) showAlert(alertId, msg, "error");
+  return true;
 }
 
 function updateAvatar(user) {
@@ -140,11 +187,11 @@ function updateAvatar(user) {
     const initials = (user.name || user.username || "?").slice(0, 2).toUpperCase();
     ini.textContent = initials;
     nm.textContent  = user.name || user.username;
-    rl.textContent  = user.role === "admin" ? "Quản trị viên" : "Điều tra viên";
+    rl.textContent  = isAdminUser(user) ? "Quản trị viên" : "Điều tra viên";
     wrap.style.display = "flex";
     wrap.style.alignItems = "center";
     // Màu avatar khác nhau theo role
-    btn.style.background = user.role === "admin" ? "var(--primary)" : "var(--teal-600,#0f6e56)";
+    btn.style.background = isAdminUser(user) ? "var(--primary)" : "var(--teal-600,#0f6e56)";
   } else {
     wrap.style.display = "none";
   }
@@ -168,22 +215,41 @@ function toggleAvatarMenu() {
   }
 }
 
-function doLogin() {
+async function doLogin() {
   const u  = document.getElementById("inp-user").value.trim();
   const p  = document.getElementById("inp-pass").value;
   const el = document.getElementById("login-alert");
-  if (!USERS[u] || USERS[u].pass !== p) {
-    el.textContent = "Sai tên đăng nhập hoặc mật khẩu.";
+  const btn = document.querySelector('#screen-login button.btn.btn-primary');
+
+  if (!u || !p) {
+    el.textContent = "Vui lòng nhập đầy đủ tên đăng nhập và mật khẩu.";
     el.classList.remove("hidden");
     return;
   }
-  currentUser = { username: u, ...USERS[u] };
-  el.classList.add("hidden");
-  saveSession(currentUser);
-  updateAvatar(currentUser);
-  resetIdleTimer();
-  showScreen("dash");
-  loadDanhSach();
+
+  try {
+    if (btn) btn.disabled = true;
+    el.classList.add("hidden");
+    const res = await apiLogin(u, p);
+    currentUser = {
+      ...(res?.user || {}),
+      token: res?.token || "",
+      expires_at: res?.expires_at || "",
+    };
+    if (!currentUser.username || !currentUser.token) {
+      throw new Error("Phản hồi đăng nhập không hợp lệ.");
+    }
+    saveSession(currentUser);
+    updateAvatar(currentUser);
+    resetIdleTimer();
+    showScreen("dash");
+    loadDanhSach();
+  } catch (err) {
+    el.textContent = getFriendlyErrorMessage(err) || "Sai tên đăng nhập hoặc mật khẩu.";
+    el.classList.remove("hidden");
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 function doLogout(silent = false) {
@@ -734,7 +800,7 @@ async function nextStep()  {
     markLocalSynced();
     updateFooterStatus(`Đã lưu hệ thống lúc ${formatWhen(new Date().toISOString())}`);
   }).catch(e => {
-    updateFooterStatus(`⚠ Chưa lưu lên server (${e.message}) — nháp đã giữ trên máy`);
+    updateFooterStatus(`⚠ Chưa lưu lên server (${getFriendlyErrorMessage(e)}) — nháp đã giữ trên máy`);
   });
 }
 
@@ -788,7 +854,7 @@ async function finishForm() {
     }, 900);
   } catch (e) {
     showAlert("form-alert",
-      `Không lưu được lên server (${e.message}). Phiếu đã lưu nháp trên máy — vui lòng thử lại khi có mạng.`,
+      `Không lưu được lên server (${getFriendlyErrorMessage(e)}). Phiếu đã lưu nháp trên máy — vui lòng thử lại khi có mạng.`,
       "error"
     );
   } finally {
@@ -875,7 +941,7 @@ async function saveAllStepsUpdate() {
     const tasks = [...changedSteps].map(buoc =>
       apiPost({ ...newData, buoc, dieu_tra_vien: dtv, updated_by: dtv })
         .then(() => ({ buoc, ok: true }))
-        .catch(e => ({ buoc, ok: false, err: e.message }))
+        .catch(e => ({ buoc, ok: false, err: getFriendlyErrorMessage(e) }))
     );
     const results = await Promise.all(tasks);
 
@@ -908,7 +974,8 @@ async function saveAllStepsUpdate() {
       );
     }
   } catch (e) {
-    showAlert("form-alert", `Lỗi: ${e.message}`, "error");
+    if (handleAuthError(e, "form-alert")) return;
+    showAlert("form-alert", `Lỗi: ${getFriendlyErrorMessage(e)}`, "error");
   } finally {
     showLoading(false);
   }
@@ -977,7 +1044,8 @@ async function saveCurrentStep() {
     return true;
   } catch (e) {
     showLoading(false);
-    showAlert("form-alert", "Không lưu lên hệ thống được. Dữ liệu đã được giữ dưới dạng nháp trên máy. (" + e.message + ")", "error");
+    if (handleAuthError(e, "form-alert")) return false;
+    showAlert("form-alert", "Không lưu lên hệ thống được. Dữ liệu đã được giữ dưới dạng nháp trên máy. (" + getFriendlyErrorMessage(e) + ")", "error");
     return false;
   }
 }
@@ -1050,9 +1118,8 @@ async function loadDanhSach() {
     "info"
   );
   try {
-    // Tất cả user đều load toàn bộ (user=all)
-    // Dashboard "Phiếu của tôi" lọc theo currentUser ở client
-    // → tab Tổng quan có đủ dữ liệu cho calcTongHopLocal fallback
+    // Server tự lọc danh sách theo quyền của tài khoản đăng nhập
+    // Dashboard vẫn merge thêm nháp local trên máy khi cần
     const res = await apiGet("danh-sach");
     console.log("[loadDanhSach] raw response:", JSON.stringify(res)?.slice(0, 300));
     danhSachCache = Array.isArray(res) ? res : (res.data || res.items || []);
@@ -1061,10 +1128,11 @@ async function loadDanhSach() {
     hideAlert("dash-alert");
     tongHopCache = null; // reset để tab tổng quan tự tính lại từ data mới
   } catch (e) {
+    if (handleAuthError(e, "dash-alert")) return;
     danhSachCache = Array.isArray(danhSachCache) ? danhSachCache : [];
     renderDashboard();
     showAlert("dash-alert",
-      "Không kết nối được API. Vẫn có thể tiếp tục các phiếu nháp đã lưu trên máy. (" + e.message + ")",
+      "Không kết nối được API. Vẫn có thể tiếp tục các phiếu nháp đã lưu trên máy. (" + getFriendlyErrorMessage(e) + ")",
       "error"
     );
     loadTongHop(); // vẫn thử load thống kê dù danh sách lỗi
@@ -1088,8 +1156,8 @@ function switchDashTab(tab) {
 }
 
 // Tính thống kê từ danhSachCache
-// Admin: danhSachCache có toàn bộ → đủ số liệu
-// User thường: chỉ có phiếu của mình → hiển thị kèm ghi chú
+// Admin: có thể thấy toàn bộ dữ liệu
+// Điều tra viên: chỉ thấy phiếu của mình
 function calcTongHopLocal() {
   const allRecords = getManagedRecords();
   let tong = 0, hoan_thanh = 0, dang_dien = 0, moi = 0;
@@ -1141,8 +1209,7 @@ async function loadTongHop() {
   if (el) el.innerHTML = '<div class="tonghop-loading">Đang tải...</div>';
 
   try {
-    // Gọi API tong-hop — không cần param user, server đọc toàn bộ sheet
-    // → tất cả user đều nhận được số liệu toàn hệ thống như nhau
+    // Gọi API tổng hợp toàn hệ thống — server tự kiểm tra phiên đăng nhập
     const timeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error("timeout")), 12000)
     );
@@ -1152,7 +1219,8 @@ async function loadTongHop() {
     tongHopCache.source = "server";
     tongHopCache.scope  = "all";
   } catch (e) {
-    console.warn("[loadTongHop] API lỗi:", e.message);
+    if (handleAuthError(e, "dash-alert")) return;
+    console.warn("[loadTongHop] API lỗi:", getFriendlyErrorMessage(e));
     // Fallback: tính từ danhSachCache hiện có
     // Admin → đủ toàn bộ; user thường → chỉ phiếu của mình + ghi chú
     tongHopCache = calcTongHopLocal();
@@ -1481,7 +1549,8 @@ async function openRecordByMa(ma) {
       });
     } catch (e) {
       hideAlert("dash-alert");
-      showAlert("dash-alert", `Không tải được dữ liệu phiếu (${e.message}). Thử lại hoặc kiểm tra mạng.`, "error");
+      if (handleAuthError(e, "dash-alert")) return;
+      showAlert("dash-alert", `Không tải được dữ liệu phiếu (${getFriendlyErrorMessage(e)}). Thử lại hoặc kiểm tra mạng.`, "error");
     }
     return;
   }
@@ -1553,12 +1622,7 @@ async function deleteRecord(ma) {
   }
   try {
     showAlert("dash-alert", `Đang xóa phiếu ${ma} trên server...`, "info");
-    const url = new URL(API_URL);
-    url.searchParams.set("action", "delete");
-    url.searchParams.set("ma_phieu", ma);
-    url.searchParams.set("actor", getCurrentUserName());
-    const res = await fetch(url.toString());
-    const data = JSON.parse(await res.text());
+    const data = await apiGet("delete", { ma_phieu: ma });
     if (data?.success) {
       removeLocalDraft(ma);
       danhSachCache = danhSachCache.filter(r => r.ma_phieu !== ma);
@@ -1568,7 +1632,8 @@ async function deleteRecord(ma) {
       showAlert("dash-alert", data?.error || `Không thể xóa phiếu ${ma}.`, "error");
     }
   } catch (e) {
-    showAlert("dash-alert", `Không kết nối được server (${e.message}). Phiếu chưa bị xóa.`, "error");
+    if (handleAuthError(e, "dash-alert")) return;
+    showAlert("dash-alert", `Không kết nối được server (${getFriendlyErrorMessage(e)}). Phiếu chưa bị xóa.`, "error");
   }
 }
 
@@ -1586,7 +1651,8 @@ async function viewRecordByMa(ma) {
       showScreen("new", { record: merged, step: 1, source: "remote", viewMode: true });
     } catch (e) {
       hideAlert("dash-alert");
-      showAlert("dash-alert", `Không tải được dữ liệu phiếu (${e.message}).`, "error");
+      if (handleAuthError(e, "dash-alert")) return;
+      showAlert("dash-alert", `Không tải được dữ liệu phiếu (${getFriendlyErrorMessage(e)}).`, "error");
     }
     return;
   }
@@ -2138,7 +2204,8 @@ function getFormLink(maPhieu) {
 }
 
 function showFormLinkModal(maPhieu) {
-  const link = getFormLink(maPhieu);
+  const link  = getFormLink(maPhieu);
+  const hoTen = normalizePatientName(document.getElementById("f_ten")?.value || "");
   if (!FORM_BASE_URL) {
     showAlert("form-alert", "Chưa cấu hình APP_FORM trong auth-config.js.", "error");
     return;
@@ -2148,37 +2215,157 @@ function showFormLinkModal(maPhieu) {
   modal.id = "form-link-modal";
   modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;";
   modal.innerHTML = `
-    <div style="background:var(--surface);border-radius:16px;padding:24px 22px;max-width:420px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.25);">
-      <div style="font-size:16px;font-weight:700;color:var(--primary);margin-bottom:4px;">📋 Link khảo sát cho bệnh nhân</div>
-      <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px;">
-        Mã phiếu đã điền sẵn: <strong style="color:var(--primary);font-family:'DM Mono',monospace;">${escapeHtml(maPhieu)}</strong>
+    <div style="background:var(--surface);border-radius:16px;padding:24px 22px;max-width:440px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.25);">
+      <div style="font-size:16px;font-weight:700;color:var(--primary);margin-bottom:2px;">📋 Chia sẻ khảo sát cho bệnh nhân</div>
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:14px;">
+        ${hoTen ? `<strong>${escapeHtml(hoTen)}</strong> · ` : ""}Mã phiếu: <strong style="color:var(--primary);font-family:'DM Mono',monospace;">${escapeHtml(maPhieu)}</strong>
       </div>
-      <div id="form-qr-wrap" style="display:flex;justify-content:center;align-items:center;margin-bottom:16px;padding:16px;background:#fff;border-radius:10px;border:1px solid var(--border);min-height:220px;">
+      <div id="form-qr-wrap" style="display:flex;justify-content:center;align-items:center;
+        margin-bottom:8px;padding:14px;background:#fff;border-radius:10px;
+        border:2px solid var(--teal-200);min-height:200px;cursor:pointer;transition:border-color .15s;"
+        onmouseenter="this.style.borderColor='var(--teal-400)'"
+        onmouseleave="this.style.borderColor='var(--teal-200)'"
+        onclick="showQRFullscreen('${escapeHtml(link)}','${escapeHtml(hoTen)}','${escapeHtml(maPhieu)}')"
+        title="Nhấn để phóng to toàn màn hình">
         <div id="form-qr-container"></div>
         <div id="form-qr-loading" style="font-size:12px;color:var(--text-muted);">Đang tạo QR...</div>
       </div>
-      <div style="background:var(--slate-50);border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:11px;font-family:'DM Mono',monospace;word-break:break-all;color:var(--slate-700);border:1px solid var(--border);max-height:72px;overflow-y:auto;" id="form-link-display">${escapeHtml(link)}</div>
-      <div style="font-size:12px;color:var(--text-muted);margin-bottom:14px;background:var(--teal-50);border-radius:8px;padding:10px 12px;border-left:3px solid var(--teal-400);line-height:1.6;">
-        📱 <strong>Quét QR</strong> bằng camera hoặc <strong>sao chép link</strong> gửi qua Zalo/nhắn tin. Mã phiếu đã điền sẵn.
+      <div style="font-size:11px;color:var(--text-muted);text-align:center;margin-bottom:12px;">
+        👆 Nhấn vào QR để phóng to — bệnh nhân quét tại chỗ
       </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <button class="btn btn-primary btn-sm" style="flex:1;min-width:110px;" onclick="copyFormLink('${escapeHtml(link)}',this)">📋 Sao chép link</button>
-        <button class="btn btn-sm" style="flex:1;" onclick="window.open('${escapeHtml(link)}','_blank')">🔗 Mở thử</button>
-        <button class="btn btn-sm" onclick="document.getElementById('form-link-modal').remove()">Đóng</button>
+      <div style="background:var(--slate-50);border-radius:8px;padding:8px 12px;margin-bottom:14px;
+        font-size:11px;font-family:'DM Mono',monospace;word-break:break-all;
+        color:var(--slate-600);border:1px solid var(--border);max-height:56px;overflow-y:auto;"
+        id="form-link-display">${escapeHtml(link)}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <button class="btn btn-primary btn-sm" style="width:100%;"
+          onclick="showQRFullscreen('${escapeHtml(link)}','${escapeHtml(hoTen)}','${escapeHtml(maPhieu)}')">
+          🖥️ Toàn màn hình
+        </button>
+        <button class="btn btn-sm" style="width:100%;background:var(--green-600);color:#fff;border-color:var(--green-600);"
+          onclick="shareFormViaZalo('${escapeHtml(link)}','${escapeHtml(hoTen)}',this)">
+          💬 Gửi Zalo / SMS
+        </button>
+        <button class="btn btn-sm" style="width:100%;"
+          onclick="copyFormLink('${escapeHtml(link)}',this)">
+          📋 Sao chép link
+        </button>
+        <button class="btn btn-sm" style="width:100%;"
+          onclick="document.getElementById('form-link-modal').remove()">
+          Đóng
+        </button>
       </div>
     </div>`;
   document.body.appendChild(modal);
   modal.addEventListener("click", e => { if (e.target === modal) modal.remove(); });
   _loadQRCode(() => {
-    const qrEl = document.getElementById("form-qr-container");
+    const qrEl   = document.getElementById("form-qr-container");
     const loading = document.getElementById("form-qr-loading");
     if (loading) loading.style.display = "none";
     if (qrEl && typeof QRCode !== "undefined") {
-      new QRCode(qrEl, { text: link, width: 192, height: 192, colorDark: "#0D9488", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.M });
+      new QRCode(qrEl, { text: link, width: 180, height: 180, colorDark: "#0D9488", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.M });
     }
   });
 }
 
+// ── QR toàn màn hình ────────────────────────────────────────
+function showQRFullscreen(link, hoTen, maPhieu) {
+  document.getElementById("form-qr-fullscreen")?.remove();
+  const overlay = document.createElement("div");
+  overlay.id = "form-qr-fullscreen";
+  overlay.style.cssText = `
+    position:fixed;inset:0;z-index:99999;cursor:pointer;
+    background:linear-gradient(160deg,#0f766e 0%,#0d9488 60%,#0e7490 100%);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;
+  `;
+  overlay.innerHTML = `
+    <div style="text-align:center;color:#fff;margin-bottom:20px;">
+      <div style="font-size:11px;font-weight:600;opacity:.75;letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px;">
+        Khoa Ngoại CTCH-TK · ĐH Y Dược Cần Thơ
+      </div>
+      <div style="font-size:26px;font-weight:800;letter-spacing:-.5px;">
+        ${escapeHtml(hoTen) || "Bệnh nhân"}
+      </div>
+      <div style="font-size:13px;opacity:.75;margin-top:4px;font-family:'DM Mono',monospace;">
+        Mã phiếu: ${escapeHtml(maPhieu || "")}
+      </div>
+    </div>
+    <div id="qr-fs-box" style="background:#fff;padding:20px;border-radius:20px;
+      box-shadow:0 12px 48px rgba(0,0,0,.35);"></div>
+    <div style="text-align:center;color:#fff;margin-top:20px;max-width:300px;">
+      <div style="font-size:18px;font-weight:700;margin-bottom:8px;">📱 Quét mã QR để điền phiếu</div>
+      <div style="font-size:13px;opacity:.8;line-height:1.6;">
+        Mở <strong>camera điện thoại</strong> → hướng vào mã QR → nhấn link hiện ra
+      </div>
+    </div>
+    <div style="position:absolute;bottom:20px;color:#fff;font-size:12px;opacity:.6;">
+      Chạm vào bất kỳ đâu để đóng
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  document.body.style.overflow = "hidden";
+  overlay.addEventListener("click", () => {
+    overlay.remove();
+    document.body.style.overflow = "";
+  });
+  _loadQRCode(() => {
+    const box = document.getElementById("qr-fs-box");
+    if (!box || typeof QRCode === "undefined") return;
+    const size = Math.min(window.innerWidth - 100, window.innerHeight - 300, 290);
+    new QRCode(box, { text: link, width: size, height: size, colorDark: "#0f766e", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.M });
+  });
+}
+
+// ── Gửi qua Zalo / SMS ──────────────────────────────────────
+async function shareFormViaZalo(link, hoTen, btn) {
+  const ten = hoTen || "bạn";
+  const msg =
+    `Kính gửi ${ten},
+
+` +
+    `Vui lòng điền phiếu khảo sát sức khỏe trước phẫu thuật tại:
+
+` +
+    `${link}
+
+` +
+    `Mã phiếu đã điền sẵn — chỉ cần trả lời câu hỏi.
+` +
+    `Xin cảm ơn!
+— Khoa Ngoại CTCH-TK, ĐH Y Dược Cần Thơ`;
+
+  // Web Share API (hoạt động tốt trên điện thoại / tablet)
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: "Phiếu khảo sát sức khỏe", text: msg, url: link });
+      return;
+    } catch (err) {
+      if (err.name === "AbortError") return;
+    }
+  }
+
+  // Fallback: copy vào clipboard
+  const doCopy = async () => {
+    try { await navigator.clipboard.writeText(msg); }
+    catch {
+      const ta = document.createElement("textarea");
+      ta.value = msg; ta.style.cssText = "position:fixed;opacity:0";
+      document.body.appendChild(ta); ta.select();
+      document.execCommand("copy"); document.body.removeChild(ta);
+    }
+  };
+  await doCopy();
+
+  if (btn) {
+    const orig = btn.textContent;
+    btn.textContent = "✓ Đã copy!";
+    btn.style.background = "var(--teal-700)";
+    setTimeout(() => { btn.textContent = orig; btn.style.background = "var(--green-600)"; }, 2500);
+  }
+  alert(`✅ Đã copy tin nhắn sẵn!
+
+Mở Zalo → tìm bệnh nhân → dán (paste) vào ô chat → Gửi.`);
+}
 function _loadQRCode(callback) {
   if (typeof QRCode !== "undefined") { callback(); return; }
   const s = document.createElement("script");
@@ -2226,7 +2413,8 @@ async function checkStep2FromForm() {
       showAlert("form-alert", "Bệnh nhân chưa điền form. Hãy chia sẻ link/QR rồi thử lại sau.", "info");
     }
   } catch (e) {
-    showAlert("form-alert", "Lỗi kiểm tra: " + e.message, "error");
+    if (handleAuthError(e, "form-alert")) return;
+    showAlert("form-alert", "Lỗi kiểm tra: " + getFriendlyErrorMessage(e), "error");
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = "🔄 Kiểm tra kết quả"; }
   }

@@ -1,149 +1,279 @@
-window.HADS_DATA = [
-  {
-    id: 1, t: "A",
-    q: "Tôi cảm thấy căng thẳng hoặc bồn chồn:",
-    opts: ["Không bao giờ (0)", "Đôi khi (1)", "Thường xuyên (2)", "Hầu hết lúc (3)"]
-  },
-  {
-    id: 2, t: "D",
-    q: "Tôi vẫn thưởng thức được những điều từng làm tôi thích thú:",
-    opts: ["Vẫn như trước (0)", "Chỉ một ít (1)", "Không nhiều như trước (2)", "Chắc chắn không (3)"]
-  },
-  {
-    id: 3, t: "A",
-    q: "Tôi có cảm giác sợ hãi như thể có điều gì xấu sắp xảy ra:",
-    opts: ["Hoàn toàn không (0)", "Một chút nhưng không lo (1)", "Đúng vậy và khá lo (2)", "Chắc chắn và rất nhiều (3)"]
-  },
-  {
-    id: 4, t: "D",
-    q: "Tôi có thể cười và nhìn thấy mặt vui của sự việc:",
-    opts: ["Thường xuyên như trước (0)", "Thỉnh thoảng (1)", "Không nhiều lắm (2)", "Hoàn toàn không (3)"]
-  },
-  {
-    id: 5, t: "A",
-    q: "Đầu óc tôi căng thẳng với những mối lo:",
-    opts: ["Thỉnh thoảng (0)", "Thỉnh thoảng nhưng không thường (1)", "Thường xuyên (2)", "Hầu hết lúc (3)"]
-  },
-  {
-    id: 6, t: "D",
-    q: "Tôi cảm thấy vui vẻ:",
-    opts: ["Thường xuyên (0)", "Đôi khi (1)", "Không thường xuyên (2)", "Hoàn toàn không (3)"]
-  },
-  {
-    id: 7, t: "A",
-    q: "Tôi có thể ngồi thư giãn và thoải mái:",
-    opts: ["Chắc chắn (0)", "Thường thì có (1)", "Không thường xuyên (2)", "Hoàn toàn không thể (3)"]
-  },
-  {
-    id: 8, t: "D",
-    q: "Tôi cảm thấy như mình đang chậm lại:",
-    opts: ["Hoàn toàn không (0)", "Đôi khi (1)", "Thường xuyên (2)", "Hầu hết lúc (3)"]
-  },
-  {
-    id: 9, t: "A",
-    q: "Tôi có cảm giác lo lắng / sợ hãi:",
-    opts: ["Hoàn toàn không (0)", "Đôi khi (1)", "Thường xuyên (2)", "Rất thường xuyên (3)"]
-  },
-  {
-    id: 10, t: "D",
-    q: "Tôi không còn quan tâm đến bề ngoài của mình:",
-    opts: ["Vẫn như trước (0)", "Ít quan tâm hơn (1)", "Không để tâm nhiều (2)", "Hoàn toàn không (3)"]
-  },
-  {
-    id: 11, t: "A",
-    q: "Tôi cảm thấy bồn chồn như thể phải đứng dậy và vận động:",
-    opts: ["Hoàn toàn không (0)", "Không nhiều (1)", "Khá nhiều (2)", "Thực sự rất nhiều (3)"]
-  },
-  {
-    id: 12, t: "D",
-    q: "Tôi mong chờ những điều thú vị sắp xảy ra:",
-    opts: ["Như tôi thường làm (0)", "Ít hơn trước (1)", "Chắc chắn ít hơn (2)", "Hầu như không bao giờ (3)"]
-  },
-  {
-    id: 13, t: "A",
-    q: "Tôi đột nhiên có cảm giác hoảng loạn:",
-    opts: ["Hoàn toàn không (0)", "Không thường xuyên (1)", "Thường xuyên (2)", "Rất thường xuyên (3)"]
-  },
-  {
-    id: 14, t: "D",
-    q: "Tôi tìm thấy niềm vui trong cuốn sách hay hoặc chương trình TV:",
-    opts: ["Thường xuyên (0)", "Đôi khi (1)", "Không thường xuyên (2)", "Hiếm khi (3)"]
-  },
-];
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Phiếu Thu Thập Số Liệu — ĐH Y Dược Cần Thơ</title>
+  <link rel="stylesheet" href="./assets/css/styles.css">
+  <style>
+    /* Nhãn trường bắt buộc */
+    .req { color: var(--red, #e53e3e); font-size: 11px; margin-left: 2px; }
 
-// ── PSQI câu 5b–5j — vấn đề giấc ngủ ───────────────────────
-// Mỗi câu dùng thang: Không (0) / <1/tuần (1) / 1–2/tuần (2) / ≥3/tuần (3)
-window.PSQI5_ITEMS = [
-  "5b. Thức giấc giữa đêm hoặc thức dậy quá sớm",
-  "5c. Phải dậy đi vệ sinh",
-  "5d. Không thở thoải mái",
-  "5e. Ho hoặc ngáy to",
-  "5f. Cảm thấy quá lạnh",
-  "5g. Cảm thấy quá nóng",
-  "5h. Có ác mộng",
-  "5i. Bị đau nhức",
-  "5j. Lý do khác",
-];
+    /* ── Dashboard tabs ─────────────────────────────────────── */
+    .dash-tabs {
+      display: flex;
+      gap: 0;
+      margin-bottom: 20px;
+      border-bottom: 2px solid var(--border, #e2e8f0);
+    }
+    .dash-tab {
+      background: none;
+      border: none;
+      border-bottom: 3px solid transparent;
+      margin-bottom: -2px;
+      padding: 10px 22px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted, #718096);
+      cursor: pointer;
+      border-radius: 0;
+      transition: color .15s, border-color .15s, background .15s;
+      letter-spacing: .01em;
+    }
+    .dash-tab:hover { color: var(--primary, #1a7a6e); background: rgba(26,122,110,.05); }
+    .dash-tab.active {
+      color: var(--primary, #1a7a6e);
+      border-bottom-color: var(--primary, #1a7a6e);
+      background: none;
+    }
 
-// ── Hài lòng sau phẫu thuật — Likert 1–5 ───────────────────
-window.HL_ITEMS = [
-  "Kiểm soát đau sau phẫu thuật",
-  "Chăm sóc của điều dưỡng",
-  "Thông tin được cung cấp trước và sau mổ",
-  "Khả năng vận động sau mổ",
-  "Kết quả phẫu thuật tổng thể",
-];
+    /* ── Tổng quan panel ──────────────────────────────────────── */
+    .tonghop-wrap { padding: 4px 0; }
+    .th-stat-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+    .th-stat-box {
+      background: var(--surface, #fff);
+      border: 1px solid var(--border, #e2e8f0);
+      border-radius: 12px;
+      padding: 16px 12px 14px;
+      text-align: center;
+    }
+    .th-stat-box.th-main { border-color: var(--primary, #1a7a6e); border-width: 2px; }
+    .th-num  { font-size: 32px; font-weight: 800; line-height: 1.1; color: var(--primary, #1a7a6e); }
+    .th-lbl  { font-size: 11px; color: var(--text-muted, #718096); margin-top: 5px; font-weight: 500; }
+    .th-green { color: #27ae60 !important; }
+    .th-amber { color: #e67e22 !important; }
+    .th-muted { color: var(--text-muted, #718096) !important; }
 
-// ── AIS-5 (Athens Insomnia Scale — 5 items) ──────────────────
-// Thang điểm 0–3 mỗi câu; tổng 0–15; >4 = rối loạn giấc ngủ
-window.AIS5_ITEMS = [
-  {
-    id: 1,
-    label: "Khởi phát giấc ngủ",
-    desc: "Thời gian để ngủ sau khi tắt đèn",
-    opts: ["Không vấn đề (0)", "Chậm nhẹ (1)", "Chậm rõ (2)", "Rất chậm / không ngủ (3)"]
-  },
-  {
-    id: 2,
-    label: "Thức giấc giữa đêm",
-    desc: "Tỉnh giấc nhiều lần trong đêm",
-    opts: ["Không vấn đề (0)", "Nhẹ (1)", "Đáng kể (2)", "Nghiêm trọng / không ngủ (3)"]
-  },
-  {
-    id: 3,
-    label: "Thức dậy sớm",
-    desc: "Dậy sớm hơn mong muốn",
-    opts: ["Không (0)", "Hơi sớm (1)", "Sớm rõ (2)", "Rất sớm / không ngủ (3)"]
-  },
-  {
-    id: 4,
-    label: "Tổng thời gian ngủ",
-    desc: "Cảm nhận về thời lượng ngủ",
-    opts: ["Đủ (0)", "Hơi thiếu (1)", "Thiếu rõ (2)", "Rất thiếu / không ngủ (3)"]
-  },
-  {
-    id: 5,
-    label: "Chất lượng giấc ngủ",
-    desc: "Độ sâu và sự thoải mái của giấc ngủ",
-    opts: ["Tốt (0)", "Hơi kém (1)", "Kém (2)", "Rất kém / không ngủ (3)"]
-  },
-];
+    .th-progress-wrap { margin-bottom: 20px; }
+    .th-progress-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--text-muted, #718096);
+      margin-bottom: 6px;
+    }
+    .th-pct { font-weight: 700; color: var(--primary, #1a7a6e); font-size: 13px; }
+    .th-progress-bar {
+      background: var(--border, #e2e8f0);
+      border-radius: 8px;
+      height: 12px;
+      overflow: hidden;
+    }
+    .th-progress-fill {
+      background: linear-gradient(90deg, var(--primary, #1a7a6e), #2ecc9a);
+      height: 12px;
+      border-radius: 8px;
+      transition: width .8s cubic-bezier(.4,0,.2,1);
+      min-width: 2px;
+    }
+    .th-progress-sub {
+      font-size: 10px;
+      color: var(--text-muted, #718096);
+      margin-top: 4px;
+      text-align: right;
+    }
 
-// ── Nguyên nhân lo âu trước phẫu thuật (multi-select) ────────
-window.NGUYEN_NHAN_LO_AU = [
-  "Sợ đau sau mổ",
-  "Sợ biến chứng hoặc tử vong",
-  "Lo ngại kết quả phẫu thuật",
-  "Lo về chi phí điều trị",
-  "Lo về mất khả năng lao động",
-  "Lý do gia đình – xã hội khác",
-];
+    .th-section-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-muted, #718096);
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      margin: 20px 0 8px;
+    }
+    .th-table-wrap {
+      overflow-x: auto;
+      border-radius: 10px;
+      border: 1px solid var(--border, #e2e8f0);
+    }
+    .th-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .th-table thead tr { background: var(--surface-raised, #f7fafc); }
+    .th-table th {
+      padding: 9px 12px;
+      text-align: left;
+      font-weight: 600;
+      color: var(--text-muted, #718096);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      white-space: nowrap;
+    }
+    .th-table td { padding: 10px 12px; border-top: 1px solid var(--border, #e2e8f0); }
+    .th-table tbody tr:hover { background: rgba(0,0,0,.025); }
+    .th-table .tc { text-align: center; font-weight: 600; }
 
-// ── Nguyên nhân rối loạn giấc ngủ (multi-select) ─────────────
-window.NGUYEN_NHAN_RLGN = [
-  "Đau vùng tổn thương",
-  "Tiếng ồn bệnh viện",
-  "Lo lắng về phẫu thuật",
-  "Môi trường nằm viện không quen",
-  "Triệu chứng khác (tiểu đêm, khó thở...)",
-];
+    .th-mini-bar-wrap { display: flex; align-items: center; gap: 7px; min-width: 110px; }
+    .th-mini-bar { flex: 1; background: var(--border, #e2e8f0); border-radius: 4px; height: 7px; overflow: hidden; }
+    .th-mini-fill { background: var(--primary, #1a7a6e); height: 7px; border-radius: 4px; transition: width .5s; }
+    .th-mini-pct { font-size: 11px; color: var(--text-muted, #718096); min-width: 34px; text-align: right; font-weight: 600; }
+
+    .th-empty { font-size: 13px; color: var(--text-muted, #718096); padding: 24px 0; text-align: center; }
+    .tonghop-loading { font-size: 13px; color: var(--text-muted, #718096); padding: 32px 0; text-align: center; }
+
+    @media (max-width: 600px) {
+      .th-stat-row { grid-template-columns: repeat(2, 1fr); }
+      .dash-tab { padding: 9px 14px; font-size: 12px; }
+    }
+
+    .th-muctieu-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 14px;
+      padding: 10px 14px;
+      background: var(--surface-raised, #f7fafc);
+      border-radius: 8px;
+      border: 1px dashed var(--border, #e2e8f0);
+      font-size: 13px;
+    }
+    .th-muctieu-label { font-weight: 600; color: var(--text, #2d3748); }
+    .th-muctieu-input {
+      width: 80px;
+      padding: 4px 8px;
+      border: 1px solid var(--border, #e2e8f0);
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--primary, #1a7a6e);
+      text-align: center;
+      background: var(--surface, #fff);
+    }
+    .th-muctieu-hint { color: var(--text-muted, #718096); }
+    .th-muctieu-saved { color: var(--green, #27ae60); font-size: 12px; font-weight: 600; }
+  </style>
+</head>
+<body>
+
+  <div class="loading-overlay" id="loading">
+    <div class="loading-box"><div class="spinner"></div> Đang lưu dữ liệu...</div>
+  </div>
+
+  <div class="topbar">
+    <div>
+      <div class="topbar-brand">Phiếu Thu Thập Số Liệu Nghiên Cứu</div>
+      <div class="topbar-sub">Khoa Ngoại CTCH-TK — ĐH Y Dược Cần Thơ</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <button class="btn btn-sm" id="btn-dash" style="display:none">← Dashboard</button>
+      <button class="btn btn-sm btn-primary" id="btn-new-top" style="display:none">+ Phiếu mới</button>
+      <!-- Avatar + dropdown đăng xuất -->
+      <div class="avatar-wrap" id="avatar-wrap" style="display:none;position:relative;">
+        <button class="avatar-btn" id="avatar-btn" onclick="toggleAvatarMenu()" title="Thông tin tài khoản">
+          <span id="avatar-initials">?</span>
+        </button>
+        <div class="avatar-menu" id="avatar-menu" style="display:none;">
+          <div class="avatar-menu-name" id="avatar-menu-name">—</div>
+          <div class="avatar-menu-role" id="avatar-menu-role">—</div>
+          <hr style="margin:8px 0;border:none;border-top:1px solid var(--border);">
+          <button class="avatar-menu-logout" onclick="doLogout()">Đăng xuất</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- LOGIN -->
+  <div id="screen-login" class="screen active">
+    <div class="container" style="max-width:400px;padding-top:60px;">
+      <div class="card">
+        <div class="card-title">Đăng nhập</div>
+        <div id="login-alert" class="alert alert-error hidden"></div>
+        <div class="form-group" style="margin-bottom:10px;">
+          <label>Tên đăng nhập</label>
+          <input type="text" id="inp-user" placeholder="Nhập tên đăng nhập">
+        </div>
+        <div class="form-group" style="margin-bottom:14px;">
+          <label>Mật khẩu</label>
+          <input type="password" id="inp-pass" onkeydown="if(event.key==='Enter')doLogin()">
+        </div>
+        <button class="btn btn-primary" style="width:100%" onclick="doLogin()">Đăng nhập</button>
+        <p style="font-size:11px;color:var(--text-muted);margin-top:10px;text-align:center;">
+          Liên hệ quản trị viên để được cấp tài khoản.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div id="screen-dash" class="screen">
+    <div class="container">
+      <div id="dash-alert" class="alert hidden"></div>
+
+      <!-- Tab bar -->
+      <div class="dash-tabs">
+        <button class="dash-tab active" id="dash-tab-mine"    onclick="switchDashTab('mine')">📋 Danh sách phiếu</button>
+        <button class="dash-tab"        id="dash-tab-overall" onclick="switchDashTab('overall')">📊 Tổng quan nghiên cứu</button>
+      </div>
+
+      <!-- Tab: Phiếu của tôi -->
+      <div id="dash-panel-mine">
+        <div class="stat-grid" id="stat-grid">
+          <div class="stat-card"><div class="stat-num">—</div><div class="stat-lbl">Tổng phiếu</div></div>
+          <div class="stat-card"><div class="stat-num">—</div><div class="stat-lbl">Phiếu của tôi</div></div>
+          <div class="stat-card"><div class="stat-num">—</div><div class="stat-lbl">Đang điền</div></div>
+          <div class="stat-card"><div class="stat-num">—</div><div class="stat-lbl">Hoàn thành</div></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <div style="font-size:13px;font-weight:600;">Danh sách phiếu</div>
+          <div class="btn-group">
+            <button class="btn btn-sm" onclick="loadDanhSach()">↻ Tải lại</button>
+            <button class="btn btn-sm btn-primary" onclick="showScreen('new')">+ Phiếu mới</button>
+          </div>
+        </div>
+        <div id="phieu-list"></div>
+      </div>
+
+      <!-- Tab: Tổng quan nghiên cứu -->
+      <div id="dash-panel-overall" style="display:none;">
+        <div id="tonghop-grid"><div class="tonghop-loading">Đang tải...</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FORM -->
+  <div id="screen-new" class="screen">
+    <div class="container">
+      <div id="form-alert" class="alert hidden"></div>
+      <div class="step-bar">
+        <div class="step-item active" id="tab1">Bước 1 — Nhập viện</div>
+        <div class="step-item" id="tab2">Bước 2 — Trước mổ</div>
+        <div class="step-item" id="tab3">Bước 3 — Sau mổ</div>
+      </div>
+      <div id="step1"></div>
+      <div id="step2" style="display:none"></div>
+      <div id="step3" style="display:none"></div>
+      <div class="form-footer">
+        <div style="font-size:11px;color:var(--text-muted)" id="footer-info">Bước 1/3</div>
+        <div class="btn-group">
+          <button class="btn btn-sm" id="btn-prev" onclick="prevStep()" style="display:none">← Trước</button>
+          <button class="btn btn-sm btn-primary" id="btn-next" onclick="nextStep()">Lưu & Tiếp theo →</button>
+          <button class="btn btn-sm btn-primary" id="btn-finish" onclick="finishForm()" style="display:none">Lưu & Hoàn thành</button>
+          <button class="btn btn-sm btn-primary" id="btn-update" onclick="saveAllStepsUpdate()" style="display:none">💾 Lưu cập nhật cả 3 bước</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!--
+    auth-config.js PHẢI load TRƯỚC main.js.
+    File này chỉ chứa API URL và cấu hình form phía client.
+  -->
+  <script src="./assets/js/auth-config.js"></script>
+  <script src="./assets/js/questions-config.js"></script>
+  <script src="./assets/js/main.js"></script>
+</body>
+</html>
