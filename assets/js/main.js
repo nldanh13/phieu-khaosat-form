@@ -470,7 +470,7 @@ const STRICT_COMPLETE_FIELDS = {
     "psqi6", "psqi7", "psqi8", "psqi9", "ais_1", "ais_2", "ais_3", "ais_4", "ais_5"
   ],
   3: [
-    "ngay_pt_thuc", "tg_pt", "pp_pt_thuc", "vo_cam_thuc", "mat_mau", "truyen_mau",
+    "ngay_pt_thuc", "tg_pt", "pp_pt_thuc", "vo_cam_thuc", "truyen_mau",
     "vas1", "vas2", "vas3", "thuoc_ngay_1", "thuoc_ngay_2", "thuoc_ngay_3",
     "van_dong", "kha_nang_vd", "bien_chung", "tg_nam_vien", "hl_0", "hl_1", "hl_2", "hl_3", "hl_4"
   ],
@@ -498,7 +498,6 @@ const STRICT_COMPLETE_FIELD_LABELS = {
   tg_pt: "Thời gian phẫu thuật",
   pp_pt_thuc: "Phương pháp PT thực tế",
   vo_cam_thuc: "Phương pháp vô cảm thực tế",
-  mat_mau: "Mất máu ước tính",
   truyen_mau: "Truyền máu",
   van_dong: "Tình trạng vận động",
   kha_nang_vd: "Khả năng vận động",
@@ -810,10 +809,10 @@ const STEP2_FIELDS = new Set([
   "psqi_5_5","psqi_5_6","psqi_5_7","psqi_5_8",
   "psqi7","psqi8","psqi9","psqi5j_text",
   "ais_1","ais_2","ais_3","ais_4","ais_5","ais_tong","ais_phanloai",
-  "nguyen_nhan_lo_au","nguyen_nhan_rlgn",
+  "nguyen_nhan_lo_au","nguyen_nhan_lo_au_khac","nguyen_nhan_rlgn","nguyen_nhan_rlgn_khac",
 ]);
 const STEP3_FIELDS = new Set([
-  "ngay_pt_thuc","tg_pt","pp_pt_thuc","vo_cam_thuc","mat_mau","truyen_mau",
+  "ngay_pt_thuc","tg_pt","pp_pt_thuc","vo_cam_thuc","truyen_mau",
   "vas1","vas2","vas3","van_dong","kha_nang_vd","bien_chung","tg_nam_vien",
   "thuoc_ngay_1","thuoc_ngay_2","thuoc_ngay_3",
   // backward-compat với phiếu cũ
@@ -1686,8 +1685,9 @@ const FIELD_ID_MAP = {
   psqi1: "f_psqi1", psqi2: "f_psqi2", psqi3: "f_psqi3", psqi4: "f_psqi4",
   psqi5a: "f_psqi5a", psqi6: "f_psqi6", psqi7: "f_psqi7", psqi8: "f_psqi8", psqi9: "f_psqi9",
   psqi5j_text: "f_psqi5j_text",
+  nguyen_nhan_lo_au_khac: "f_nnLoAuKhac", nguyen_nhan_rlgn_khac: "f_nnRlgnKhac",
   ngay_pt_thuc: "f_ngayPTthuc", tg_pt: "f_tgPT", pp_pt_thuc: "f_ppPTthuc",
-  vo_cam_thuc: "f_voCamThuc", mat_mau: "f_matMau", truyen_mau: "f_truyenMau",
+  vo_cam_thuc: "f_voCamThuc", truyen_mau: "f_truyenMau",
   vas1: "f_vas1", vas2: "f_vas2", vas3: "f_vas3",
   van_dong: "f_vanDong", kha_nang_vd: "f_khanangVD", bien_chung: "f_bienChung",
   tg_nam_vien: "f_tgNamVien", nhan_xet: "f_nhanXet",
@@ -1841,6 +1841,9 @@ function applyFormData(data = {}) {
       if (cb) cb.checked = true;
     });
   } catch {}
+  // Khôi phục ô nguyên nhân khác lo âu
+  const nnLoAuKhacEl = document.getElementById("f_nnLoAuKhac");
+  if (nnLoAuKhacEl && data.nguyen_nhan_lo_au_khac) nnLoAuKhacEl.value = data.nguyen_nhan_lo_au_khac;
   // Khôi phục checkboxes nguyên nhân RLGN
   try {
     const rlgnArr = typeof data.nguyen_nhan_rlgn === "string" && data.nguyen_nhan_rlgn
@@ -1850,6 +1853,9 @@ function applyFormData(data = {}) {
       if (cb) cb.checked = true;
     });
   } catch {}
+  // Khôi phục ô nguyên nhân khác RLGN
+  const nnRlgnKhacEl = document.getElementById("f_nnRlgnKhac");
+  if (nnRlgnKhacEl && data.nguyen_nhan_rlgn_khac) nnRlgnKhacEl.value = data.nguyen_nhan_rlgn_khac;
   // Thuốc động: ưu tiên thuoc_ngay_*, fallback về field cũ nếu có
   [1, 2, 3].forEach(d => {
     if (data[`thuoc_ngay_${d}`]) {
@@ -1951,9 +1957,11 @@ function collectStep(n) {
     // Nguyên nhân lo âu (multi-select checkbox → JSON array)
     const nnLoAuChecked = [...document.querySelectorAll("input[name='nn_lo_au']:checked")].map(el => el.value);
     d.nguyen_nhan_lo_au = nnLoAuChecked.length ? JSON.stringify(nnLoAuChecked) : "";
+    d.nguyen_nhan_lo_au_khac = getText("f_nnLoAuKhac");
     // Nguyên nhân RLGN (multi-select checkbox → JSON array)
     const nnRlgnChecked = [...document.querySelectorAll("input[name='nn_rlgn']:checked")].map(el => el.value);
     d.nguyen_nhan_rlgn = nnRlgnChecked.length ? JSON.stringify(nnRlgnChecked) : "";
+    d.nguyen_nhan_rlgn_khac = getText("f_nnRlgnKhac");
     return d;
   }
 
@@ -1962,7 +1970,6 @@ function collectStep(n) {
     tg_pt:         getNum("f_tgPT"),
     pp_pt_thuc:    getText("f_ppPTthuc"),
     vo_cam_thuc:   getText("f_voCamThuc"),
-    mat_mau:       getNum("f_matMau"),
     truyen_mau:    getText("f_truyenMau"),
     // VAS sau mổ: range, giá trị 0 là hợp lệ
     vas1:          getNum("f_vas1"),
@@ -2363,18 +2370,36 @@ function buildStep2() {
     </div>`).join("");
 
   const nnLoAuItems = window.NGUYEN_NHAN_LO_AU || [];
-  const nnLoAuHtml  = nnLoAuItems.map((lbl,i) => `
+  const nnLoAuHtml  = `
+    ${nnLoAuItems.map((lbl,i) => `
     <label class="opt-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;">
-      <input type="checkbox" name="nn_lo_au" value="${escapeHtml(lbl)}" id="nn_lo_au_${i}" style="width:15px;height:15px;flex-shrink:0;">
+      <input type="checkbox" name="nn_lo_au" value="${escapeHtml(lbl)}" id="nn_lo_au_${i}" style="width:15px;height:15px;flex-shrink:0;" onchange="onNnChange('lo_au',this)">
       <span style="font-size:13px;">${lbl}</span>
-    </label>`).join("");
+    </label>`).join("")}
+    <label class="opt-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;border-top:1px solid var(--border);margin-top:4px;padding-top:8px;">
+      <input type="checkbox" name="nn_lo_au" value="Không có lo lắng" id="nn_lo_au_khong" style="width:15px;height:15px;flex-shrink:0;" onchange="onNnKhong('lo_au',this)">
+      <span style="font-size:13px;font-style:italic;color:var(--text-muted);">Không có lo lắng</span>
+    </label>
+    <div style="display:flex;align-items:center;gap:8px;margin-top:4px;">
+      <span style="font-size:13px;white-space:nowrap;color:var(--text-muted);">Nguyên nhân khác:</span>
+      <input type="text" id="f_nnLoAuKhac" placeholder="Ghi rõ nếu có..." style="flex:1;font-size:13px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);box-sizing:border-box;">
+    </div>`;
 
   const nnRlgnItems = window.NGUYEN_NHAN_RLGN || [];
-  const nnRlgnHtml  = nnRlgnItems.map((lbl,i) => `
+  const nnRlgnHtml  = `
+    ${nnRlgnItems.map((lbl,i) => `
     <label class="opt-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;">
-      <input type="checkbox" name="nn_rlgn" value="${escapeHtml(lbl)}" id="nn_rlgn_${i}" style="width:15px;height:15px;flex-shrink:0;">
+      <input type="checkbox" name="nn_rlgn" value="${escapeHtml(lbl)}" id="nn_rlgn_${i}" style="width:15px;height:15px;flex-shrink:0;" onchange="onNnChange('rlgn',this)">
       <span style="font-size:13px;">${lbl}</span>
-    </label>`).join("");
+    </label>`).join("")}
+    <label class="opt-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;border-top:1px solid var(--border);margin-top:4px;padding-top:8px;">
+      <input type="checkbox" name="nn_rlgn" value="Không có rối loạn giấc ngủ" id="nn_rlgn_khong" style="width:15px;height:15px;flex-shrink:0;" onchange="onNnKhong('rlgn',this)">
+      <span style="font-size:13px;font-style:italic;color:var(--text-muted);">Không có rối loạn giấc ngủ</span>
+    </label>
+    <div style="display:flex;align-items:center;gap:8px;margin-top:4px;">
+      <span style="font-size:13px;white-space:nowrap;color:var(--text-muted);">Nguyên nhân khác:</span>
+      <input type="text" id="f_nnRlgnKhac" placeholder="Ghi rõ nếu có..." style="flex:1;font-size:13px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);box-sizing:border-box;">
+    </div>`;
 
   const formBannerHtml = FORM_BASE_URL ? `
   <div class="card" style="border:2px solid var(--teal-200);background:var(--teal-50);">
@@ -2508,7 +2533,6 @@ function buildStep3() {
       <div class="form-group"><label>Phương pháp vô cảm thực tế</label><input id="f_voCamThuc"></div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label>Mất máu ước tính (mL)</label><input type="number" id="f_matMau" placeholder="200"></div>
       <div class="form-group">
         <label>Truyền máu</label>
         <select id="f_truyenMau">
@@ -2599,6 +2623,21 @@ function calcHADS() {
   const clr    = s => s >= 11 ? "var(--red)" : s >= 8 ? "var(--amber)" : "var(--green)";
   if (aiEl && tA === 7) { aiEl.textContent = interp(A); aiEl.style.color = clr(A); }
   if (diEl && tD === 7) { diEl.textContent = interp(D); diEl.style.color = clr(D); }
+}
+
+// ── Nguyên nhân lo âu / RLGN — xử lý exclusive "Không có" ──
+// Khi chọn 1 option thường → bỏ chọn "Không có"
+function onNnChange(group, el) {
+  if (!el.checked) return;
+  const khong = document.getElementById("nn_" + group + "_khong");
+  if (khong) khong.checked = false;
+}
+// Khi chọn "Không có" → bỏ chọn tất cả option khác
+function onNnKhong(group, el) {
+  if (!el.checked) return;
+  document.querySelectorAll("input[name='nn_" + group + "']").forEach(cb => {
+    if (cb !== el) cb.checked = false;
+  });
 }
 
 function calcPSQI() {
