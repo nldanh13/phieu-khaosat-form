@@ -8,6 +8,6 @@ window.APP_AUTH = {
 window.APP_FORM = {
   // 1. URL Google Form (bỏ ?usp=... ở cuối nếu có)
   //    Ví dụ: "https://docs.google.com/forms/d/e/1FAIpQLSe.../viewform"
-  baseUrl: "https://docs.google.com/forms/d/e/1FAIpQLSfzzM-ORkD_Q9nAB4At09Rq5DTmpkqJF0REjz7HescAo6_fag/viewform",
-  maPhieuEntryId: "entry.1025507863",
+  baseUrl: "https://docs.google.com/forms/d/e/1FAIpQLScgWi35lb-yHRtDQ8Bc86bwn3aFCu3Z33g3z7yeZh5F44YUyg/viewform",
+  maPhieuEntryId: "entry.1216733058",
 };
