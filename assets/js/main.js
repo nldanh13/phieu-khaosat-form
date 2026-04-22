@@ -861,16 +861,7 @@ function showStep(n) {
 // Chỉ cho phép nhảy về bước đã qua hoặc bước tiếp theo liền kề
 function jumpToStep(step) {
   const target = Math.max(1, Math.min(3, Number(step || 1)));
-  if (viewMode) return showStep(target);
-  if (target > currentStep) {
-    // Muốn tiến: phải validate bước hiện tại trước
-    const errors = validateStep(currentStep);
-    if (errors.length > 0) {
-      showAlert("form-alert", "Vui lòng hoàn tất bước hiện tại trước: " + errors.join(" · "), "error");
-      return;
-    }
-    saveLocalProgress(false);
-  }
+  if (formDirty) saveLocalProgress(false);
   showStep(target);
 }
 
