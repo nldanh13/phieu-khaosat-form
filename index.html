@@ -129,6 +129,65 @@
       .th-stat-row { grid-template-columns: repeat(2, 1fr); }
       .dash-tab { padding: 9px 14px; font-size: 12px; }
     }
+
+    /* ── Missing fields panel ───────────────────────────────── */
+    #missing-panel {
+      margin: 0 0 12px;
+      border-radius: 10px;
+      overflow: hidden;
+      border: 1px solid var(--border, #e2e8f0);
+      font-size: 13px;
+    }
+    .mp-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      background: var(--amber-50, #fffbeb);
+      border-bottom: 1px solid var(--amber-200, #fde68a);
+      cursor: pointer;
+      user-select: none;
+    }
+    .mp-header.all-ok {
+      background: var(--green-50, #f0fdf4);
+      border-bottom-color: var(--green-200, #bbf7d0);
+      cursor: default;
+    }
+    .mp-title { font-weight: 600; color: var(--amber-800, #92400e); display: flex; align-items: center; gap: 6px; }
+    .mp-title.ok { color: var(--green-700, #15803d); }
+    .mp-toggle { font-size: 11px; color: var(--text-muted, #718096); }
+    .mp-body { padding: 8px 10px; background: var(--surface, #fff); }
+    .mp-step-group { margin-bottom: 8px; }
+    .mp-step-group:last-child { margin-bottom: 0; }
+    .mp-step-label {
+      font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .06em; color: var(--text-muted, #718096); margin-bottom: 5px;
+    }
+    .mp-fields { display: flex; flex-wrap: wrap; gap: 5px; }
+    .mp-field-btn {
+      background: var(--amber-50, #fffbeb);
+      border: 1px solid var(--amber-300, #fcd34d);
+      color: var(--amber-900, #78350f);
+      border-radius: 6px; padding: 3px 9px; font-size: 12px;
+      cursor: pointer; transition: background .12s;
+    }
+    .mp-field-btn:hover { background: var(--amber-100, #fef3c7); }
+    .mp-field-btn.other-step {
+      background: var(--surface-raised, #f7fafc);
+      border-color: var(--border, #e2e8f0);
+      color: var(--text-muted, #718096);
+    }
+    .mp-field-btn.other-step:hover { background: var(--border, #e2e8f0); }
+
+    /* Step tab badge */
+    .step-missing-badge {
+      display: inline-flex; align-items: center; justify-content: center;
+      background: var(--red, #e53e3e); color: #fff;
+      font-size: 10px; font-weight: 700;
+      min-width: 17px; height: 17px; border-radius: 9px;
+      margin-left: 5px; padding: 0 4px;
+      vertical-align: middle;
+    }
   </style>
 </head>
 <body>
@@ -234,9 +293,8 @@
         <div style="font-size:11px;color:var(--text-muted)" id="footer-info">Bước 1/3</div>
         <div class="btn-group">
           <button class="btn btn-sm" id="btn-prev" onclick="prevStep()" style="display:none">← Trước</button>
-          <button class="btn btn-sm btn-primary" id="btn-next" onclick="nextStep()">Lưu & Tiếp theo →</button>
-          <button class="btn btn-sm btn-primary" id="btn-finish" onclick="finishForm()" style="display:none">Lưu & Hoàn thành</button>
-          <button class="btn btn-sm btn-primary" id="btn-update" onclick="saveAllStepsUpdate()" style="display:none">💾 Lưu cập nhật cả 3 bước</button>
+          <button class="btn btn-sm" id="btn-next" onclick="nextStep()">Tiếp →</button>
+          <button class="btn btn-sm btn-primary" id="btn-save-server" onclick="saveToServer()">💾 Lưu lên server</button>
         </div>
       </div>
     </div>

@@ -523,6 +523,176 @@ for (let i = 1; i <= 5; i++) STRICT_COMPLETE_FIELD_LABELS[`ais_${i}`] = `AIS-${i
 for (let i = 1; i <= 3; i++) STRICT_COMPLETE_FIELD_LABELS[`vas${i}`] = `VAS sau mổ ngày ${i}`;
 for (let i = 0; i < 5; i++) STRICT_COMPLETE_FIELD_LABELS[`hl_${i}`] = `Hài lòng câu ${i + 1}`;
 
+// ── Missing fields scan — danh sách trường cần nhập theo từng bước ──
+const REQUIRED_FIELD_SCAN = {
+  1: [
+    { id:"f_ten",          label:"Họ tên bệnh nhân",      type:"input"  },
+    { id:"f_hoSo",         label:"Mã BN",                  type:"input"  },
+    { id:"f_ngaySinh",     label:"Ngày sinh",              type:"input"  },
+    { id:"f_gioi",         label:"Giới tính",              type:"select" },
+    { id:"f_ngheNghiep",   label:"Nghề nghiệp",            type:"input"  },
+    { id:"f_diaChi",       label:"Địa chỉ",                type:"input"  },
+    { id:"f_hocVan",       label:"Học vấn",                type:"select" },
+    { id:"f_danToc",       label:"Dân tộc",                type:"input"  },
+    { id:"f_ngayNhapVien", label:"Ngày nhập viện",         type:"input"  },
+    { id:"f_ngayPT",       label:"Ngày PT dự kiến",        type:"input"  },
+    { id:"f_canNang",      label:"Cân nặng (kg)",          type:"input"  },
+    { id:"f_chieuCao",     label:"Chiều cao (cm)",         type:"input"  },
+    { id:"f_chanDoan",     label:"Chẩn đoán",              type:"input"  },
+    { id:"f_loaiPT",       label:"Loại phẫu thuật",        type:"select" },
+    { id:"f_vungPT",       label:"Vùng phẫu thuật",        type:"select" },
+    { id:"f_ppPT",         label:"Phương pháp PT",         type:"select" },
+    { id:"f_voCam",        label:"Phương pháp vô cảm",     type:"select" },
+  ],
+  2: [
+    ...Array.from({length:14}, (_,i) => ({ name:`hads_${i+1}`, label:`HADS câu ${i+1}`, type:"radio" })),
+    { id:"f_psqi1",  label:"PSQI-1 Giờ đi ngủ",          type:"input"  },
+    { id:"f_psqi2",  label:"PSQI-2 Phút để ngủ",         type:"input"  },
+    { id:"f_psqi3",  label:"PSQI-3 Giờ thức dậy",        type:"input"  },
+    { id:"f_psqi4",  label:"PSQI-4 Số giờ ngủ",          type:"input"  },
+    { id:"f_psqi5a", label:"PSQI-5a Thức vì đau?",       type:"select" },
+    ...Array.from({length:9}, (_,i) => ({ name:`psqi_5_${i}`, label:`PSQI-5${String.fromCharCode(98+i)}`, type:"radio" })),
+    { id:"f_psqi6",  label:"PSQI-6 Chất lượng ngủ",      type:"select" },
+    { id:"f_psqi7",  label:"PSQI-7 Dùng thuốc ngủ",      type:"select" },
+    { id:"f_psqi8",  label:"PSQI-8 Buồn ngủ ban ngày",   type:"select" },
+    { id:"f_psqi9",  label:"PSQI-9 Ảnh hưởng sinh hoạt", type:"select" },
+    ...Array.from({length:5}, (_,i) => ({ name:`ais_${i+1}`, label:`AIS-${i+1} ${["Khởi phát","Thức giữa đêm","Dậy sớm","Tổng thời gian ngủ","Chất lượng ngủ"][i]}`, type:"radio" })),
+  ],
+  3: [
+    { id:"f_ngayPTthuc", label:"Ngày PT thực tế",          type:"input"  },
+    { id:"f_tgPT",       label:"Thời gian PT (phút)",      type:"input"  },
+    { id:"f_ppPTthuc",   label:"PP PT thực tế",            type:"select" },
+    { id:"f_voCamThuc",  label:"Vô cảm thực tế",           type:"select" },
+    { id:"f_truyenMau",  label:"Truyền máu",               type:"select" },
+    { id:"f_vanDong",    label:"Tình trạng vận động",      type:"select" },
+    { id:"f_khanangVD",  label:"Khả năng vận động",        type:"select" },
+    { id:"f_bienChung",  label:"Biến chứng",               type:"select" },
+    { id:"f_tgNamVien",  label:"Số ngày nằm viện",         type:"input"  },
+    ...Array.from({length:5}, (_,i) => ({ name:`hl_${i}`, label:`Hài lòng câu ${i+1}`, type:"radio" })),
+  ],
+};
+
+function scanMissingFields() {
+  const result = { 1: [], 2: [], 3: [] };
+  for (const [step, fields] of Object.entries(REQUIRED_FIELD_SCAN)) {
+    for (const f of fields) {
+      let empty;
+      if (f.type === "radio") {
+        empty = !document.querySelector(`input[name="${f.name}"]:checked`);
+      } else {
+        const el = document.getElementById(f.id);
+        empty = !el || !el.value || el.value.trim() === "";
+      }
+      if (empty) result[Number(step)].push(f);
+    }
+  }
+  return result;
+}
+
+// Nhảy tới một trường cụ thể (bằng step + field object)
+function jumpToField(step, fieldIdx) {
+  const field = window.__mpFields?.[step]?.[fieldIdx];
+  if (!field) return;
+  if (Number(step) !== currentStep) showStep(Number(step));
+  requestAnimationFrame(() => {
+    let el;
+    if (field.type === "radio") {
+      el = document.querySelector(`input[name="${field.name}"]`)?.closest(".q-card") ||
+           document.querySelector(`input[name="${field.name}"]`);
+    } else {
+      el = document.getElementById(field.id);
+    }
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (el.tagName === "INPUT" || el.tagName === "SELECT" || el.tagName === "TEXTAREA") {
+      el.focus();
+      const orig = el.style.outline;
+      el.style.outline = "2.5px solid var(--amber-500, #f59e0b)";
+      el.style.outlineOffset = "2px";
+      setTimeout(() => { el.style.outline = orig; el.style.outlineOffset = ""; }, 1800);
+    } else {
+      const orig = el.style.background;
+      el.style.background = "rgba(251,191,36,.15)";
+      setTimeout(() => el.style.background = orig, 1800);
+    }
+  });
+}
+
+function ensureMissingPanel() {
+  if (document.getElementById("missing-panel")) return;
+  const container = document.querySelector("#screen-new .container");
+  if (!container) return;
+  const footer = container.querySelector(".form-footer");
+  if (!footer) return;
+  const panel = document.createElement("div");
+  panel.id = "missing-panel";
+  container.insertBefore(panel, footer);
+}
+
+function updateMissingPanel() {
+  const panel = document.getElementById("missing-panel");
+  if (!panel) return;
+  if (viewMode) { panel.innerHTML = ""; return; }
+
+  const missing = scanMissingFields();
+  window.__mpFields = missing; // store for jumpToField references
+
+  const totalMissing = Object.values(missing).reduce((s, arr) => s + arr.length, 0);
+
+  // Update step tab badges
+  for (let s = 1; s <= 3; s++) {
+    const tab = document.getElementById(`tab${s}`);
+    if (!tab) continue;
+    tab.querySelectorAll(".step-missing-badge").forEach(b => b.remove());
+    const cnt = (missing[s] || []).length;
+    if (cnt > 0) {
+      const badge = document.createElement("span");
+      badge.className = "step-missing-badge";
+      badge.textContent = cnt;
+      tab.appendChild(badge);
+    }
+  }
+
+  if (totalMissing === 0) {
+    panel.innerHTML = `<div class="mp-header all-ok"><span class="mp-title ok">✓ Tất cả mục đã điền đầy đủ</span></div>`;
+    return;
+  }
+
+  // Render grouped missing fields (current step first, others below)
+  const stepLabels = { 1: "Bước 1 — Nhập viện", 2: "Bước 2 — Trước mổ", 3: "Bước 3 — Sau mổ" };
+  const steps = [currentStep, ...([1,2,3].filter(s => s !== currentStep))];
+
+  const groups = steps.map(s => {
+    const fields = missing[s] || [];
+    if (!fields.length) return "";
+    const isCurrentStep = s === currentStep;
+    const btns = fields.map((f, idx) =>
+      `<button class="mp-field-btn${isCurrentStep ? "" : " other-step"}"
+        onclick="jumpToField(${s},${idx})">${escapeHtml(f.label)}</button>`
+    ).join("");
+    return `<div class="mp-step-group">
+      <div class="mp-step-label">${stepLabels[s]} — ${fields.length} mục</div>
+      <div class="mp-fields">${btns}</div>
+    </div>`;
+  }).join("");
+
+  const curCount = (missing[currentStep] || []).length;
+  const otherCount = totalMissing - curCount;
+  const summary = curCount > 0
+    ? `${curCount} mục chưa nhập ở bước này${otherCount > 0 ? ` · +${otherCount} bước khác` : ""}`
+    : `${otherCount} mục chưa nhập ở bước khác`;
+
+  const panelOpen = panel.dataset.open !== "0";
+  panel.innerHTML = `
+    <div class="mp-header" onclick="this.closest('#missing-panel').dataset.open=(this.closest('#missing-panel').dataset.open==='0'?'1':'0');this.closest('#missing-panel').querySelector('.mp-body').style.display=this.closest('#missing-panel').dataset.open==='0'?'none':'block'">
+      <span class="mp-title">⚠ ${escapeHtml(summary)}</span>
+      <span class="mp-toggle">▾ Bấm để ${panelOpen ? "ẩn" : "xem"}</span>
+    </div>
+    <div class="mp-body" style="display:${panelOpen ? "block" : "none"}">${groups}</div>
+  `;
+  panel.dataset.open = panelOpen ? "1" : "0";
+}
+
 function getStrictCompletionMissing(record) {
   if ((record?.buoc || 0) < 3) return ["Chưa đủ 3 bước"];
   const missing = [];
@@ -586,6 +756,7 @@ function showScreen(name, options = {}) {
     [1, 2, 3].forEach(d => applyThuocNgay(d, ""));
     ensureFooterControls();
     ensureModeBanner();
+    ensureMissingPanel();
     bindAutosave();
     document.querySelectorAll(".step-item").forEach((item, i) => {
       item.onclick = () => jumpToStep(i + 1);
@@ -619,26 +790,21 @@ function showScreen(name, options = {}) {
 function setFooterButtonsForMode() {
   const btnPrev = document.getElementById("btn-prev");
   const btnNext = document.getElementById("btn-next");
-  const btnFinish = document.getElementById("btn-finish");
-  const btnUpdate = document.getElementById("btn-update");
-  const btnSaveDraft = document.getElementById("btn-save-draft");
-  if (!btnPrev || !btnNext || !btnFinish) return;
+  const btnSave = document.getElementById("btn-save-server");
+  if (!btnPrev || !btnNext) return;
 
   if (viewMode) {
-    if (btnSaveDraft) btnSaveDraft.style.display = "none";
+    if (btnSave) btnSave.style.display = "none";
     btnPrev.textContent = "← Bước trước";
-    btnNext.textContent = "Tiếp theo →";
-    btnFinish.textContent = "Quay lại danh sách";
-    btnFinish.onclick = () => showScreen("dash");
-    if (btnUpdate) btnUpdate.style.display = "none";
+    btnNext.textContent = currentStep >= 3 ? "← Quay lại danh sách" : "Tiếp theo →";
+    btnNext.onclick = currentStep >= 3 ? () => showScreen("dash") : nextStep;
     return;
   }
 
-  if (btnSaveDraft) btnSaveDraft.style.display = "inline-flex";
+  if (btnSave) btnSave.style.display = "inline-block";
   btnPrev.textContent = "← Trước";
-  btnNext.textContent = "Lưu & Tiếp theo →";
-  btnFinish.textContent = "Lưu & Hoàn thành";
-  btnFinish.onclick = finishForm;
+  btnNext.textContent = "Tiếp →";
+  btnNext.onclick = nextStep;
 }
 
 function setFooterStatusTone(mode = "success") {
@@ -662,11 +828,8 @@ function showStep(n) {
   setFooterButtonsForMode();
 
   if (viewMode) {
-    document.getElementById("btn-prev").style.display   = n > 1 ? "inline-block" : "none";
-    document.getElementById("btn-next").style.display   = n < 3 ? "inline-block" : "none";
-    document.getElementById("btn-finish").style.display = n === 3 ? "inline-block" : "none";
-    const btnUpdate = document.getElementById("btn-update");
-    if (btnUpdate) btnUpdate.style.display = "none";
+    document.getElementById("btn-prev").style.display = n > 1 ? "inline-block" : "none";
+    document.getElementById("btn-next").style.display = "inline-block";
     setTimeout(() => {
       document.querySelectorAll("#step1 input,#step1 select,#step1 textarea,#step2 input,#step2 select,#step2 textarea,#step3 input,#step3 select,#step3 textarea").forEach(el => {
         el.disabled = true;
@@ -675,22 +838,23 @@ function showStep(n) {
     }, 50);
     updateFooterStatus("Chỉ xem — dùng các nút để chuyển bước");
     setFooterStatusTone("neutral");
+    updateMissingPanel();
     return;
   }
 
-  const isCompleted = currentHighestStep >= 3;
-  document.getElementById("btn-prev").style.display   = n > 1 ? "inline-block" : "none";
-  document.getElementById("btn-next").style.display   = (!isCompleted && n < 3) ? "inline-block" : "none";
-  document.getElementById("btn-finish").style.display = (!isCompleted && n === 3) ? "inline-block" : "none";
-  const btnUpdate = document.getElementById("btn-update");
-  if (btnUpdate) btnUpdate.style.display = isCompleted ? "inline-block" : "none";
+  document.getElementById("btn-prev").style.display = n > 1 ? "inline-block" : "none";
+  document.getElementById("btn-next").style.display = n < 3 ? "inline-block" : "none";
+  const btnSave = document.getElementById("btn-save-server");
+  if (btnSave) btnSave.style.display = "inline-block";
+
   const local = getLocalDraft(currentMaPhieu);
   updateFooterStatus(
     local?.updated_at
-      ? `Nháp gần nhất: ${formatWhen(local.updated_at)}`
+      ? `Tự lưu nháp lúc ${formatWhen(local.updated_at)}`
       : "Tự động lưu nháp khi đang nhập"
   );
   setFooterStatusTone("success");
+  updateMissingPanel();
 }
 
 // [FIX#7] jumpToStep: không cho nhảy tiến quá bước đã validate
@@ -712,32 +876,65 @@ function jumpToStep(step) {
 
 async function nextStep()  {
   if (!ensureEditableRecord()) return;
-  const errors = validateStep(currentStep);
-  if (errors.length > 0) {
-    showAlert("form-alert", "Vui lòng điền đầy đủ: " + errors.join(" · "), "error");
-    return;
-  }
-  // [FIX-SPEED] Lưu local + chuyển bước NGAY — không chờ server
+  // Save local draft silently then just navigate — server save is manual via "Lưu lên server"
   if (formDirty) saveLocalProgress(false);
   currentHighestStep = Math.max(Number(currentHighestStep || 0), Number(currentStep || 0), 1);
-  const stepToSave = currentStep; // capture trước khi showStep thay đổi currentStep
   showStep(Math.min(3, currentStep + 1));
-
-  // Gửi lên server ngầm (không block UI)
-  const data = collectStep(stepToSave);
-  data.ma_phieu       = currentMaPhieu;
-  data.buoc           = currentHighestStep;
-  data.dieu_tra_vien  = getCurrentUserName();
-  data.updated_by     = getCurrentUserName();
-  apiPost(data).then(() => {
-    markLocalSynced();
-    updateFooterStatus(`Đã lưu hệ thống lúc ${formatWhen(new Date().toISOString())}`);
-  }).catch(e => {
-    updateFooterStatus(`⚠ Chưa lưu lên server (${e.message}) — nháp đã giữ trên máy`);
-  });
 }
 
 function prevStep() { showStep(Math.max(1, currentStep - 1)); }
+
+// ── saveToServer: gửi toàn bộ dữ liệu đã nhập lên Google Sheets ──
+async function saveToServer() {
+  if (!ensureEditableRecord()) return;
+  saveLocalProgress(false);
+  showLoading(true);
+  try {
+    const draft = getLocalDraft(currentMaPhieu) || {};
+    const allData = { ...(draft.data || {}), ma_phieu: currentMaPhieu };
+    const dtv = getCurrentUserName();
+    currentHighestStep = Math.max(Number(currentHighestStep || 0), Number(currentStep || 0), 1);
+
+    // Gửi song song tất cả bước đã có dữ liệu
+    const stepsToSave = [];
+    for (let b = 1; b <= currentHighestStep; b++) stepsToSave.push(b);
+
+    const results = await Promise.all(
+      stepsToSave.map(buoc =>
+        apiPost({ ...allData, buoc, dieu_tra_vien: dtv, updated_by: dtv })
+          .then(() => ({ buoc, ok: true }))
+          .catch(e => ({ buoc, ok: false, err: e.message }))
+      )
+    );
+
+    const failed  = results.filter(r => !r.ok);
+    const success = results.filter(r => r.ok);
+
+    if (failed.length === 0) {
+      upsertLocalDraft({
+        ...draft, ma_phieu: currentMaPhieu, buoc: currentHighestStep,
+        last_step: currentStep, updated_at: new Date().toISOString(),
+        local_only: false, synced: true, user: dtv, data: allData,
+      });
+      showAlert("form-alert", `✓ Đã lưu ${success.length} bước lên Google Sheets.`, "success");
+      updateFooterStatus(`Đã lưu hệ thống lúc ${formatWhen(new Date().toISOString())}`);
+      markLocalSynced();
+      // Cập nhật cache và danh sách ngầm
+      const idx = danhSachCache.findIndex(r => r.ma_phieu === currentMaPhieu);
+      if (idx >= 0) danhSachCache[idx] = { ...danhSachCache[idx], ...allData };
+      loadDanhSach().catch(() => {});
+    } else {
+      const errMsg = failed.map(r => `Bước ${r.buoc}: ${r.err}`).join(" · ");
+      showAlert("form-alert",
+        `Lưu được ${success.length}/${results.length} bước. Lỗi: ${errMsg}`, "error");
+    }
+  } catch (e) {
+    showAlert("form-alert",
+      `Không lưu được lên server (${e.message}). Phiếu đã lưu nháp trên máy.`, "error");
+  } finally {
+    showLoading(false);
+  }
+}
 
 async function finishForm() {
   if (!ensureEditableRecord()) return;
@@ -1030,9 +1227,12 @@ function bindAutosave() {
   const handler = event => {
     if (!screen.classList.contains("active")) return;
     if (!event.target.closest("#screen-new")) return;
-    formDirty = true; // đánh dấu có thay đổi
+    formDirty = true;
     clearTimeout(draftSaveTimer);
-    draftSaveTimer = setTimeout(() => saveLocalProgress(false), 500);
+    draftSaveTimer = setTimeout(() => {
+      saveLocalProgress(false);
+      updateMissingPanel();
+    }, 500);
   };
   screen.addEventListener("input",  handler, true);
   screen.addEventListener("change", handler, true);
@@ -1594,13 +1794,7 @@ async function viewRecordByMa(ma) {
 
 // ── Mode banner / footer ─────────────────────────────────────
 function ensureFooterControls() {
-  const group = document.querySelector(".form-footer .btn-group");
-  if (!group || document.getElementById("btn-save-draft")) return;
-  const btn = document.createElement("button");
-  btn.className = "btn btn-sm"; btn.id = "btn-save-draft"; btn.type = "button";
-  btn.textContent = "Lưu nháp";
-  btn.onclick = () => saveLocalProgress(true);
-  group.insertBefore(btn, group.firstChild);
+  // Auto-save handles drafts — no manual "Lưu nháp" button needed
 }
 
 function ensureModeBanner() {
